@@ -5,9 +5,18 @@ import { Separator } from "@/components/ui/separator";
 import { mockSessionStats } from "@/data/mock";
 import type { Session } from "@/data/types";
 import { formatRelativeTime } from "@/lib/time";
+import { useChatStore, type ChatStatus } from "@/stores/chatStore";
+
+const STATUS_LABEL = {
+  idle: "Idle",
+  running: "Running",
+  awaiting_permission: "Waiting for permission",
+  error: "Error",
+} satisfies Record<ChatStatus, string>;
 
 export function SessionInspector({ session, onClose }: { session?: Session; onClose: () => void }) {
   const stats = mockSessionStats;
+  const status = useChatStore((s) => (session ? s.status[session.id] : undefined) ?? "idle");
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l bg-surface" aria-label="Session inspector">
       <div className="flex h-9 shrink-0 items-center justify-between border-b px-4">
@@ -19,7 +28,12 @@ export function SessionInspector({ session, onClose }: { session?: Session; onCl
       <div className="space-y-4 p-4 text-sm">
         <Section title="Session">
           <p className="font-medium">{session?.title ?? "No session selected"}</p>
-          {session ? <p className="text-xs text-muted-foreground">Updated {formatRelativeTime(session.updatedAt)}</p> : null}
+          {session ? (
+            <>
+              <p className="text-xs text-muted-foreground">Updated {formatRelativeTime(session.updatedAt)}</p>
+              <p className="text-xs text-muted-foreground">Status: {STATUS_LABEL[status]}</p>
+            </>
+          ) : null}
         </Section>
         <Separator />
         <Section title="Model">

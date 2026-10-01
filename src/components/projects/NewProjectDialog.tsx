@@ -12,12 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ProjectLanguage } from "@/data/types";
+import { PROJECT_LANGUAGES, type ProjectLanguage } from "@/data/types";
+import { isOneOf } from "@/lib/guards";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
-
-const LANGUAGES: ProjectLanguage[] = ["TypeScript", "JavaScript", "Python", "Go", "Rust", "Java", "Other"];
 
 export function NewProjectDialog() {
   const open = useUiStore((s) => s.newProjectOpen);
@@ -98,10 +97,12 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         <select
           id="project-language"
           value={language}
-          onChange={(e) => setLanguage(e.target.value as ProjectLanguage)}
+          onChange={(e) => {
+            if (isOneOf(PROJECT_LANGUAGES, e.target.value)) setLanguage(e.target.value);
+          }}
           className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         >
-          {LANGUAGES.map((l) => (
+          {PROJECT_LANGUAGES.map((l) => (
             <option key={l} value={l}>
               {l}
             </option>

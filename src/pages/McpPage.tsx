@@ -15,7 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import type { McpServer } from "@/data/types";
+import { MCP_TRANSPORTS, type McpTransport } from "@/data/types";
+import { isOneOf } from "@/lib/guards";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 export function McpPage() {
@@ -61,9 +62,20 @@ export function McpPage() {
 }
 
 function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {/* Mounted only while open so every opening starts with a clean form. */}
+        {open ? <AddServerForm onDone={() => onOpenChange(false)} /> : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AddServerForm({ onDone }: { onDone: () => void }) {
   const addMcpServer = useSettingsStore((s) => s.addMcpServer);
   const [name, setName] = useState("");
-  const [transport, setTransport] = useState<McpServer["transport"]>("http");
+  const [transport, setTransport] = useState<McpTransport>("http");
   const [target, setTarget] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const invalid = submitted && (!name.trim() || !target.trim());
@@ -74,58 +86,57 @@ function AddServerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     if (!name.trim() || !target.trim()) return;
     addMcpServer({ name, transport, target });
     toast.success(`${name.trim()} added`, { description: "Saved as not connected. Connections arrive in milestone M8." });
-    setName("");
-    setTarget("");
-    setSubmitted(false);
-    onOpenChange(false);
+    onDone();
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={onSubmit} noValidate className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Add MCP server</DialogTitle>
-            <DialogDescription>
-              Only the server address is stored. Credentials are never entered here — they will live in the OS keychain.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="mcp-name">Name</Label>
-            <Input id="mcp-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="GitHub" />
+    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+      <DialogHeader>
+        <DialogTitle>Add MCP server</DialogTitle>
+        <DialogDescription>
+          Only the server address is stored. Credentials are never entered here — they will live in the OS keychain.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="mcp-name">Name</Label>
+        <Input id="mcp-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="GitHub" />
+      </div>
+      <fieldset className="grid gap-2">
+        <legend className="mb-2 text-sm font-medium">Transport</legend>
+        <RadioGroup
+          value={transport}
+          onValueChange={(value) => {
+            if (isOneOf(MCP_TRANSPORTS, value)) setTransport(value);
+          }}
+          className="flex gap-4"
+        >
+          <div className="flex items-center gap-2">
+            <RadioGroupItem value="http" id="mcp-http" />
+            <Label htmlFor="mcp-http">HTTP</Label>
           </div>
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">Transport</legend>
-            <RadioGroup value={transport} onValueChange={(v) => setTransport(v as McpServer["transport"])} className="flex gap-4">
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="http" id="mcp-http" />
-                <Label htmlFor="mcp-http">HTTP</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="stdio" id="mcp-stdio" />
-                <Label htmlFor="mcp-stdio">Local process (stdio)</Label>
-              </div>
-            </RadioGroup>
-          </fieldset>
-          <div className="grid gap-2">
-            <Label htmlFor="mcp-target">{transport === "http" ? "URL" : "Command"}</Label>
-            <Input
-              id="mcp-target"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-              placeholder={transport === "http" ? "https://mcp.example.com" : "npx -y @example/mcp-server"}
-              className="font-mono text-xs"
-            />
+          <div className="flex items-center gap-2">
+            <RadioGroupItem value="stdio" id="mcp-stdio" />
+            <Label htmlFor="mcp-stdio">Local process (stdio)</Label>
           </div>
-          {invalid ? <p className="text-xs text-destructive">Name and {transport === "http" ? "URL" : "command"} are required.</p> : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Add server</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </RadioGroup>
+      </fieldset>
+      <div className="grid gap-2">
+        <Label htmlFor="mcp-target">{transport === "http" ? "URL" : "Command"}</Label>
+        <Input
+          id="mcp-target"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          placeholder={transport === "http" ? "https://mcp.example.com" : "npx -y @example/mcp-server"}
+          className="font-mono text-xs"
+        />
+      </div>
+      {invalid ? <p className="text-xs text-destructive">Name and {transport === "http" ? "URL" : "command"} are required.</p> : null}
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit">Add server</Button>
+      </DialogFooter>
+    </form>
   );
 }

@@ -80,7 +80,7 @@ export function CommandPalette() {
           <CommandSeparator />
           <CommandGroup heading="Projects">
             {projects.map((p) => (
-              <CommandItem key={p.id} value={`project ${p.name}`} onSelect={() => run(() => navigate(`/projects/${p.id}`))}>
+              <CommandItem key={p.id} value={`project ${p.name} ${p.id}`} onSelect={() => run(() => navigate(`/projects/${p.id}`))}>
                 <FolderGit2 /> {p.name}
               </CommandItem>
             ))}

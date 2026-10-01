@@ -10,7 +10,10 @@ export function useRouteContext() {
   const sessionId = sessionMatch?.params.sessionId;
 
   const project = useProjectStore((s) => (projectId ? s.projects.find((p) => p.id === projectId) : undefined));
-  const session = useSessionStore((s) => (sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined));
+  // A session id only resolves inside the project it belongs to.
+  const session = useSessionStore((s) =>
+    sessionId && projectId ? s.sessions.find((x) => x.id === sessionId && x.projectId === projectId) : undefined,
+  );
 
   return { projectId, sessionId, project, session };
 }

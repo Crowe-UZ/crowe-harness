@@ -1,3 +1,4 @@
+import { wait } from "@/lib/async";
 import type { AuthService, AuthStatus } from "./auth";
 
 /**
@@ -20,7 +21,7 @@ export class MockAuthService implements AuthService {
   }
 
   /** Demo only: lets Settings → Advanced preview every auth state. */
-  setStatus(status: AuthStatus): void {
+  debugSetStatus(status: AuthStatus): void {
     this.status = status;
   }
 
@@ -33,8 +34,4 @@ export class MockAuthService implements AuthService {
     await wait(this.delayMs);
     this.status = { state: "signed_out" };
   }
-}
-
-function wait(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }

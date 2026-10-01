@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronRight, FileCode2, FileText, Folder, FolderOpen } from "lucide-react";
 import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import type { FileNode } from "@/features/workspace/mockFs";
+import type { FileNode } from "@/features/workspace/fs";
 import { cn } from "@/lib/utils";
 
 interface VisibleNode {
@@ -9,30 +9,32 @@ interface VisibleNode {
   parent?: string;
 }
 
-function flatten(nodes: FileNode[], expanded: Set<string>, depth = 0, parent?: string): VisibleNode[] {
+function flatten(nodes: FileNode[], expanded: ReadonlySet<string>, depth = 0, parent?: string): VisibleNode[] {
   return nodes.flatMap((node) => [
     { node, depth, parent },
     ...(node.kind === "dir" && expanded.has(node.path) ? flatten(node.children ?? [], expanded, depth + 1, node.path) : []),
   ]);
 }
 
-function allDirs(nodes: FileNode[]): string[] {
-  return nodes.flatMap((n) => (n.kind === "dir" ? [n.path, ...allDirs(n.children ?? [])] : []));
-}
-
-/** Accessible tree (WAI-ARIA tree pattern) with roving focus and arrow-key navigation. */
+/**
+ * Accessible tree (WAI-ARIA tree pattern) with roving focus and arrow-key navigation.
+ * Expansion is controlled so it can outlive the component (per-project workspace state).
+ */
 export function FileTree({
   nodes,
   selected,
   onSelect,
+  expanded,
+  onExpandedChange,
   label,
 }: {
   nodes: FileNode[];
   selected?: string;
   onSelect: (path: string) => void;
+  expanded: ReadonlySet<string>;
+  onExpandedChange: (expanded: string[]) => void;
   label: string;
 }) {
-  const [expanded, setExpanded] = useState(() => new Set(allDirs(nodes)));
   const [focused, setFocused] = useState<string | undefined>(selected ?? nodes[0]?.path);
   const refs = useRef(new Map<string, HTMLDivElement>());
   const visible = useMemo(() => flatten(nodes, expanded), [nodes, expanded]);
@@ -43,14 +45,12 @@ export function FileTree({
     refs.current.get(path)?.focus();
   };
 
-  const toggle = (path: string, open?: boolean) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      const shouldOpen = open ?? !next.has(path);
-      if (shouldOpen) next.add(path);
-      else next.delete(path);
-      return next;
-    });
+  const toggle = (path: string, open?: boolean) => {
+    const next = new Set(expanded);
+    if (open ?? !next.has(path)) next.add(path);
+    else next.delete(path);
+    onExpandedChange([...next]);
+  };
 
   const activate = (node: FileNode) => (node.kind === "dir" ? toggle(node.path) : onSelect(node.path));
 

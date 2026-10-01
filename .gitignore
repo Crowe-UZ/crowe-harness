@@ -28,8 +28,18 @@ dist-ssr
 .env.*
 !.env.example
 
+# Code-signing / updater key material (never commit)
+*.pfx
+*.p12
+*.pem
+*.key
+.tauri/
+
 # Tests / coverage
 coverage
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# TypeScript incremental build info
+*.tsbuildinfo

@@ -1,3 +1,4 @@
+import { wait } from "@/lib/async";
 import type {
   AIEvent,
   AIProvider,
@@ -18,6 +19,13 @@ export interface MockAIProviderOptions {
   chunkDelayMs?: number;
   /** Duration of each simulated tool call in ms (0 in tests). */
   stepDelayMs?: number;
+  /** Tool names that ask for permission before running (demonstrates the permission prompt). */
+  askPermissionFor?: readonly string[];
+}
+
+interface PendingPermission {
+  sessionId: string;
+  resolve: (decision: PermissionDecision) => void;
 }
 
 /**
@@ -28,16 +36,21 @@ export class MockAIProvider implements AIProvider {
   readonly id = "mock" as const;
   private readonly chunkDelayMs: number;
   private readonly stepDelayMs: number;
+  private readonly askPermissionFor: ReadonlySet<string>;
   private readonly interrupted = new Set<string>();
+  private readonly allowedForSession = new Map<string, Set<string>>();
+  private readonly pendingPermissions = new Map<string, PendingPermission>();
   private counter = 0;
 
   constructor(options: MockAIProviderOptions = {}) {
     this.chunkDelayMs = options.chunkDelayMs ?? 30;
     this.stepDelayMs = options.stepDelayMs ?? 500;
+    this.askPermissionFor = new Set(options.askPermissionFor ?? []);
   }
 
-  async startSession(_options: StartSessionOptions): Promise<string> {
-    return this.nextId("mock-session");
+  async startSession(options: StartSessionOptions): Promise<string> {
+    // Like `claude --resume`, resuming keeps the runtime session id.
+    return options.resumeSessionId ?? this.nextId("mock-session");
   }
 
   async *sendMessage(sessionId: string, text: string, _attachments?: Attachment[]): AsyncIterable<AIEvent> {
@@ -51,9 +64,27 @@ export class MockAIProvider implements AIProvider {
         return;
       }
       const id = `${messageId}-tool-${index}`;
-      yield { type: "tool_call_start", id, name: step.name, input: { description: step.label } };
+      const input = { description: step.label };
+      yield { type: "tool_call_start", id, messageId, name: step.name, input };
+
+      if (this.needsPermission(sessionId, step.name)) {
+        const requestId = `${id}-permission`;
+        const decision = this.waitForDecision(sessionId, requestId);
+        yield { type: "permission_request", id: requestId, messageId, tool: step.name, input };
+        const answer = await decision;
+        if (this.interrupted.has(sessionId)) {
+          yield this.end(messageId, "interrupted");
+          return;
+        }
+        if (answer === "deny") {
+          yield { type: "tool_call_end", id, messageId, status: "error", output: "Permission denied" };
+          continue;
+        }
+        if (answer === "allow_session") this.allowTool(sessionId, step.name);
+      }
+
       await wait(this.stepDelayMs);
-      yield { type: "tool_call_end", id, status: "success" };
+      yield { type: "tool_call_end", id, messageId, status: "success" };
     }
 
     for (const piece of splitIntoChunks(buildMockReply(text))) {
@@ -70,14 +101,42 @@ export class MockAIProvider implements AIProvider {
 
   async interrupt(sessionId: string): Promise<void> {
     this.interrupted.add(sessionId);
+    this.cancelPermissions(sessionId);
   }
 
-  async respondToPermission(_requestId: string, _decision: PermissionDecision): Promise<void> {
-    // The mock runtime never requests permissions.
+  async respondToPermission(requestId: string, decision: PermissionDecision): Promise<void> {
+    const pending = this.pendingPermissions.get(requestId);
+    if (!pending) return;
+    this.pendingPermissions.delete(requestId);
+    pending.resolve(decision);
   }
 
   async stopSession(sessionId: string): Promise<void> {
     this.interrupted.add(sessionId);
+    this.cancelPermissions(sessionId);
+    this.allowedForSession.delete(sessionId);
+  }
+
+  private needsPermission(sessionId: string, tool: string): boolean {
+    return this.askPermissionFor.has(tool) && !this.allowedForSession.get(sessionId)?.has(tool);
+  }
+
+  private allowTool(sessionId: string, tool: string): void {
+    const allowed = this.allowedForSession.get(sessionId) ?? new Set<string>();
+    allowed.add(tool);
+    this.allowedForSession.set(sessionId, allowed);
+  }
+
+  private waitForDecision(sessionId: string, requestId: string): Promise<PermissionDecision> {
+    return new Promise((resolve) => this.pendingPermissions.set(requestId, { sessionId, resolve }));
+  }
+
+  private cancelPermissions(sessionId: string): void {
+    for (const [requestId, pending] of this.pendingPermissions) {
+      if (pending.sessionId !== sessionId) continue;
+      this.pendingPermissions.delete(requestId);
+      pending.resolve("deny");
+    }
   }
 
   private end(messageId: string, stopReason: StopReason): AIEvent {
@@ -95,14 +154,10 @@ export function buildMockReply(prompt: string): string {
   return [
     `Demo response from the mock runtime for "${topic}".`,
     "",
-    "Once Claude Code is connected, this is where it would inspect the project, propose changes and report test results. Right now the conversation only exercises the interface: streaming, activity steps and interruption.",
+    "Once Claude Code is connected, this is where it would inspect the project, propose changes and report test results. Right now the conversation only exercises the interface: streaming, activity steps, permissions and interruption.",
   ].join("\n");
 }
 
 function splitIntoChunks(text: string): string[] {
   return text.match(/\S+[ \t]*|\n/g) ?? [text];
-}
-
-function wait(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }

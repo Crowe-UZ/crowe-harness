@@ -8,6 +8,8 @@ import { ProjectPage } from "@/pages/ProjectPage";
 import { ProjectsPage } from "@/pages/ProjectsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SkillsPage } from "@/pages/SkillsPage";
+import { mostRecentProject, useProjectStore } from "@/stores/projectStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 /**
  * Hash routing: works identically under the Vite dev server and Tauri's
@@ -36,3 +38,12 @@ export const router = createHashRouter([
     ],
   },
 ]);
+
+/** "Open last project on startup": runs once, on initial load, only when the app starts at "/". */
+function openLastProjectOnStartup() {
+  if (router.state.location.pathname !== "/" || !useSettingsStore.getState().openLastProjectOnStartup) return;
+  const project = mostRecentProject(useProjectStore.getState().projects);
+  if (project) void router.navigate(`/projects/${project.id}`, { replace: true });
+}
+
+openLastProjectOnStartup();

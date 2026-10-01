@@ -1,6 +1,6 @@
 import { FolderX, GitBranch, MessageSquarePlus, PanelRight, SearchX } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useEffect, type ReactNode } from "react";
+import { Link, Navigate, useParams } from "react-router";
 import { useShallow } from "zustand/shallow";
 import { ChatView } from "@/components/chat/ChatView";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -11,22 +11,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useStartSession } from "@/hooks/use-start-session";
 import { useProjectStore } from "@/stores/projectStore";
 import { sessionsForProject, useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-
-type WorkspaceTab = "chat" | "files" | "terminal";
+import { isWorkspaceTab, useWorkspaceStore } from "@/stores/workspaceStore";
 
 export function ProjectPage() {
   const { projectId, sessionId } = useParams();
-  const navigate = useNavigate();
   const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
   const touchProject = useProjectStore((s) => s.touchProject);
   const sessions = useSessionStore(useShallow((s) => sessionsForProject(s.sessions, projectId)));
-  const createSession = useSessionStore((s) => s.createSession);
   const inspectorOpen = useSettingsStore((s) => s.inspectorOpen);
   const setInspectorOpen = useSettingsStore((s) => s.setInspectorOpen);
-  const [tab, setTab] = useState<WorkspaceTab>("chat");
+  const tab = useWorkspaceStore((s) => (projectId ? s.workspaces[projectId]?.tab : undefined) ?? "chat");
+  const setTab = useWorkspaceStore((s) => s.setTab);
+  const startSession = useStartSession(project?.id);
 
   useEffect(() => {
     if (projectId) touchProject(projectId);
@@ -50,14 +50,21 @@ export function ProjectPage() {
     );
   }
 
-  const session = sessionId ? sessions.find((s) => s.id === sessionId) : sessions[0];
-  const startSession = () => {
-    const created = createSession(project.id);
-    navigate(`/projects/${project.id}/sessions/${created.id}`);
-  };
+  const latest = sessions[0];
+  if (!sessionId && latest) {
+    return <Navigate replace to={`/projects/${project.id}/sessions/${latest.id}`} />;
+  }
+
+  const session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
 
   return (
-    <Tabs value={tab} onValueChange={(v) => setTab(v as WorkspaceTab)} className="flex h-full min-h-0 flex-col gap-0">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (isWorkspaceTab(value)) setTab(project.id, value);
+      }}
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
       <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="truncate text-base font-semibold">{project.name}</h1>
@@ -127,10 +134,10 @@ export function ProjectPage() {
             )}
           </TabsContent>
           <TabsContent value="files" className="h-full">
-            <FilesView projectName={project.name} />
+            <FilesView key={project.id} projectId={project.id} projectName={project.name} projectPath={project.path} />
           </TabsContent>
           <TabsContent value="terminal" className="h-full">
-            <MockTerminal cwd={project.path} />
+            <MockTerminal key={project.id} projectId={project.id} cwd={project.path} />
           </TabsContent>
         </div>
         {inspectorOpen ? <SessionInspector session={session} onClose={() => setInspectorOpen(false)} /> : null}
@@ -139,6 +146,6 @@ export function ProjectPage() {
   );
 }
 
-function CenteredState({ children }: { children: React.ReactNode }) {
+function CenteredState({ children }: { children: ReactNode }) {
   return <div className="flex h-full items-center justify-center p-8">{children}</div>;
 }

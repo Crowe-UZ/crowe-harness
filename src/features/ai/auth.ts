@@ -22,6 +22,8 @@ export interface AuthService {
   getStatus(): Promise<AuthStatus>;
   startLogin(): Promise<void>;
   logout(): Promise<void>;
+  /** Demo/dev capability: force a status so the UI can preview every state. Absent in real services. */
+  debugSetStatus?(status: AuthStatus): void;
 }
 
 export function describeAuthStatus(status: AuthStatus | undefined): string {

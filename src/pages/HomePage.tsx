@@ -7,15 +7,13 @@ import { Button } from "@/components/ui/button";
 import { formatRelativeTime, greeting } from "@/lib/time";
 import { useAuthStore } from "@/stores/authStore";
 import { sortByLastOpened, useProjectStore } from "@/stores/projectStore";
-import { useSessionStore } from "@/stores/sessionStore";
+import { sortSessionsByUpdated, useSessionStore } from "@/stores/sessionStore";
 import { useUiStore } from "@/stores/uiStore";
 
 export function HomePage() {
   const projects = useProjectStore(useShallow((s) => sortByLastOpened(s.projects).slice(0, 6)));
   const projectNames = useProjectStore(useShallow((s) => Object.fromEntries(s.projects.map((p) => [p.id, p.name]))));
-  const sessions = useSessionStore(
-    useShallow((s) => [...s.sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5)),
-  );
+  const sessions = useSessionStore(useShallow((s) => sortSessionsByUpdated(s.sessions).slice(0, 5)));
   const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
   const authState = useAuthStore((s) => s.status?.state);
 

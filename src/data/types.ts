@@ -1,4 +1,7 @@
-export type ProjectLanguage = "TypeScript" | "JavaScript" | "Python" | "Go" | "Rust" | "Java" | "Other";
+import type { Usage } from "@/features/ai/types";
+
+export const PROJECT_LANGUAGES = ["TypeScript", "JavaScript", "Python", "Go", "Rust", "Java", "Other"] as const;
+export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
 
 export interface Project {
   id: string;
@@ -18,6 +21,8 @@ export interface Session {
   createdAt: string;
   /** ISO timestamp */
   updatedAt: string;
+  /** Runtime (Claude Code) session id, used to resume the conversation. */
+  runtimeSessionId?: string;
 }
 
 export type ActivityStatus = "pending" | "running" | "done" | "error";
@@ -39,6 +44,8 @@ export interface ChatMessage {
   createdAt: string;
   status: MessageStatus;
   activity?: ActivityItem[];
+  /** Token usage reported by the runtime when the message ended. */
+  usage?: Usage;
 }
 
 export interface Agent {
@@ -56,11 +63,14 @@ export interface Skill {
   enabled: boolean;
 }
 
+export const MCP_TRANSPORTS = ["stdio", "http"] as const;
+export type McpTransport = (typeof MCP_TRANSPORTS)[number];
+
 export interface McpServer {
   id: string;
   name: string;
   description: string;
-  transport: "stdio" | "http";
+  transport: McpTransport;
   target: string;
   status: "not_connected";
 }

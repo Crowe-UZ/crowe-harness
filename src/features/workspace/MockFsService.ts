@@ -1,11 +1,7 @@
-export interface FileNode {
-  /** Path relative to the project root, using "/" separators. */
-  path: string;
-  name: string;
-  kind: "file" | "dir";
-  children?: FileNode[];
-}
+import { wait } from "@/lib/async";
+import type { FileNode, FsService } from "./fs";
 
+/** Demo content only — the same fictional files are shown for every project. */
 const CONTENTS: Record<string, string> = {
   "src/auth/login.ts": `import { createSession } from "./session";
 import { verifyPassword } from "../lib/crypto";
@@ -109,7 +105,7 @@ pnpm dev
 `,
 };
 
-export const mockFileTree: FileNode[] = [
+const TREE: FileNode[] = [
   {
     path: "src",
     name: "src",
@@ -139,10 +135,24 @@ export const mockFileTree: FileNode[] = [
   { path: "CLAUDE.md", name: "CLAUDE.md", kind: "file" },
 ];
 
-/** Read-only mock file access with a small delay so loading states are visible. */
-export async function readMockFile(path: string, delayMs = 150): Promise<string> {
-  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-  const content = CONTENTS[path];
-  if (content === undefined) throw new Error(`File not found: ${path}`);
-  return content;
+/** Read-only demo file system with small delays so loading states are visible. */
+export class MockFsService implements FsService {
+  readonly id = "mock" as const;
+  private readonly delayMs: number;
+
+  constructor(delayMs = 150) {
+    this.delayMs = delayMs;
+  }
+
+  async tree(_projectPath: string): Promise<FileNode[]> {
+    await wait(this.delayMs);
+    return TREE;
+  }
+
+  async read(_projectPath: string, relPath: string): Promise<string> {
+    await wait(this.delayMs);
+    const content = CONTENTS[relPath];
+    if (content === undefined) throw new Error(`File not found: ${relPath}`);
+    return content;
+  }
 }

@@ -1,9 +1,11 @@
 import { Bot, User } from "lucide-react";
+import { memo } from "react";
 import type { ChatMessage } from "@/data/types";
 import { cn } from "@/lib/utils";
 import { ActivityList } from "./ActivityList";
 
-export function MessageItem({ message }: { message: ChatMessage }) {
+/** Memoized: during streaming only the message being updated re-renders. */
+export const MessageItem = memo(function MessageItem({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   const streaming = message.status === "streaming";
 
@@ -46,4 +48,4 @@ export function MessageItem({ message }: { message: ChatMessage }) {
       </div>
     </article>
   );
-}
+});

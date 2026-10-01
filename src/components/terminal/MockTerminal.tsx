@@ -1,25 +1,17 @@
 import { Eraser, TerminalSquare } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { mockTerminalOutput } from "@/data/mock";
 import { cn } from "@/lib/utils";
-
-interface Line {
-  id: number;
-  text: string;
-  tone?: "command" | "muted";
-}
-
-let nextId = 0;
-const toLines = (texts: string[]): Line[] =>
-  texts.map((text) => ({ id: nextId++, text, tone: text.startsWith("$ ") ? "command" : undefined }));
+import { TERMINAL_SEED, useWorkspaceStore } from "@/stores/workspaceStore";
 
 /**
  * Demo terminal. Commands are echoed but never executed — real PTY
- * support arrives in milestone M6.
+ * support arrives in milestone M6. History is kept per project.
  */
-export function MockTerminal({ cwd }: { cwd: string }) {
-  const [lines, setLines] = useState<Line[]>(() => toLines(mockTerminalOutput));
+export function MockTerminal({ projectId, cwd }: { projectId: string; cwd: string }) {
+  const lines = useWorkspaceStore((s) => s.workspaces[projectId]?.terminal ?? TERMINAL_SEED);
+  const appendTerminal = useWorkspaceStore((s) => s.appendTerminal);
+  const clearTerminal = useWorkspaceStore((s) => s.clearTerminal);
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,14 +26,13 @@ export function MockTerminal({ cwd }: { cwd: string }) {
     setInput("");
     if (!command) return;
     if (command === "clear" || command === "cls") {
-      setLines([]);
+      clearTerminal(projectId);
       return;
     }
-    setLines((prev) => [
-      ...prev,
-      { id: nextId++, text: `$ ${command}`, tone: "command" },
-      { id: nextId++, text: "Command execution is disabled in this version (demo terminal).", tone: "muted" },
-      { id: nextId++, text: "" },
+    appendTerminal(projectId, [
+      { text: `$ ${command}`, tone: "command" },
+      { text: "Command execution is disabled in this version (demo terminal).", tone: "muted" },
+      { text: "" },
     ]);
   }
 
@@ -51,7 +42,7 @@ export function MockTerminal({ cwd }: { cwd: string }) {
         <TerminalSquare className="size-3.5" aria-hidden="true" />
         <span className="font-mono">{cwd}</span>
         <span className="rounded border px-1.5 leading-4">Demo · commands are not executed</span>
-        <Button variant="ghost" size="xs" className="ml-auto" onClick={() => setLines([])} disabled={lines.length === 0}>
+        <Button variant="ghost" size="xs" className="ml-auto" onClick={() => clearTerminal(projectId)} disabled={lines.length === 0}>
           <Eraser data-icon="inline-start" /> Clear
         </Button>
       </div>

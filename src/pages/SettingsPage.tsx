@@ -18,31 +18,32 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { describeAuthStatus, type AuthStatus } from "@/features/ai/auth";
-import { MockAuthService } from "@/features/ai/MockAuthService";
 import { services } from "@/features/ai/services";
-import type { PermissionMode } from "@/features/ai/types";
-import { useTheme, type Theme } from "@/lib/theme";
+import { isPermissionMode, type PermissionMode } from "@/features/ai/types";
+import { isOneOf } from "@/lib/guards";
+import { isTheme, useTheme, type Theme } from "@/lib/theme";
 import { useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const SECTIONS = ["general", "appearance", "account", "security", "advanced"] as const;
 type Section = (typeof SECTIONS)[number];
 
-const LABELS: Record<Section, string> = {
+const LABELS = {
   general: "General",
   appearance: "Appearance",
   account: "Account",
   security: "Security",
   advanced: "Advanced",
-};
+} satisfies Record<Section, string>;
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
-  const section: Section = SECTIONS.includes(requested as Section) ? (requested as Section) : "general";
+  const section: Section = isOneOf(SECTIONS, requested) ? requested : "general";
 
   return (
     <Page>
@@ -137,7 +138,9 @@ function AppearanceSettings() {
       <div className="px-4 py-3">
         <fieldset>
           <legend className="mb-3 text-sm font-medium">Theme</legend>
-          <RadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)} className="grid gap-2">
+          <RadioGroup value={theme} onValueChange={(value) => {
+              if (isTheme(value)) setTheme(value);
+            }} className="grid gap-2">
             {THEMES.map(({ value, label }) => (
               <div key={value} className="flex items-center gap-2">
                 <RadioGroupItem value={value} id={`theme-${value}`} />
@@ -258,7 +261,9 @@ function SecuritySettings() {
     <div className="space-y-6">
       <SettingsSection title="Permissions" description="Default permission mode for new sessions.">
         <div className="px-4 py-3">
-          <RadioGroup value={mode} onValueChange={(v) => setMode(v as PermissionMode)} className="grid gap-3">
+          <RadioGroup value={mode} onValueChange={(value) => {
+              if (isPermissionMode(value)) setMode(value);
+            }} className="grid gap-3">
             {modes.map((m) => (
               <div key={m.value} className="flex items-start gap-2">
                 <RadioGroupItem value={m.value} id={`mode-${m.value}`} className="mt-0.5" />
@@ -290,10 +295,10 @@ function SecuritySettings() {
 function AdvancedSettings() {
   const refresh = useAuthStore((s) => s.refresh);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const mockAuth = services.auth instanceof MockAuthService ? services.auth : undefined;
+  const canPreviewAuth = services.auth.debugSetStatus !== undefined;
 
   const previewAuth = (status: AuthStatus) => {
-    mockAuth?.setStatus(status);
+    services.auth.debugSetStatus?.(status);
     void refresh();
   };
 
@@ -302,6 +307,7 @@ function AdvancedSettings() {
     useSessionStore.getState().reset();
     useSettingsStore.getState().reset();
     useChatStore.getState().reset();
+    useWorkspaceStore.getState().reset();
     setConfirmOpen(false);
     toast.success("Local demo data reset");
   };
@@ -314,7 +320,7 @@ function AdvancedSettings() {
         </Row>
       </SettingsSection>
 
-      {mockAuth ? (
+      {canPreviewAuth ? (
         <SettingsSection title="Demo: account state" description="Preview how the interface reacts to each Claude sign-in state.">
           <div className="flex flex-wrap gap-2 px-4 py-3">
             <Button variant="outline" size="sm" onClick={() => previewAuth({ state: "cli_not_found" })}>

@@ -1,0 +1,58 @@
+# pnpm settings (pnpm >= 11 reads non-auth settings from this file, not .npmrc).
+# Single-package repo: no `packages:` list needed.
+
+# --- Supply-chain hardening -------------------------------------------------
+
+# Dependency lifecycle scripts (preinstall/install/postinstall) are denied
+# unless reviewed and listed here. `true` = allowed to run, `false` = reviewed
+# and intentionally blocked.
+allowBuilds: {}
+
+# Fail the install if any dependency has an unreviewed build script
+# (instead of silently skipping it).
+strictDepBuilds: true
+
+# Never auto-run every build script.
+dangerouslyAllowAllBuilds: false
+
+# Do not resolve versions published less than 24h ago (minutes).
+minimumReleaseAge: 1440
+# TEMPORARY (added 2026-10-01, delete this whole list after 2026-10-02):
+# exact versions already pinned in pnpm-lock.yaml before this policy was
+# enabled, published < 24h before the lockfile was verified. Exact
+# `name@version` entries only - never exempt a whole package.
+minimumReleaseAgeExclude:
+  - '@csstools/css-calc@3.4.2'
+  - '@csstools/css-color-parser@4.2.5'
+  - '@csstools/css-parser-algorithms@4.0.2'
+  - '@csstools/css-syntax-patches-for-csstree@1.1.15'
+  - '@tauri-apps/api@2.12.1'
+  - '@tauri-apps/cli@2.12.1'
+  - '@tauri-apps/cli-darwin-arm64@2.12.1'
+  - '@tauri-apps/cli-darwin-x64@2.12.1'
+  - '@tauri-apps/cli-linux-arm-gnueabihf@2.12.1'
+  - '@tauri-apps/cli-linux-arm64-gnu@2.12.1'
+  - '@tauri-apps/cli-linux-arm64-musl@2.12.1'
+  - '@tauri-apps/cli-linux-riscv64-gnu@2.12.1'
+  - '@tauri-apps/cli-linux-x64-gnu@2.12.1'
+  - '@tauri-apps/cli-linux-x64-musl@2.12.1'
+  - '@tauri-apps/cli-win32-arm64-msvc@2.12.1'
+  - '@tauri-apps/cli-win32-ia32-msvc@2.12.1'
+  - '@tauri-apps/cli-win32-x64-msvc@2.12.1'
+  - chai@6.3.0
+  - globals@17.13.0
+  - vite@8.3.2
+
+# Fail if a package's provenance/trust level drops compared to earlier releases.
+trustPolicy: no-downgrade
+# semver@6.3.1 is the official 2023 backport (CVE-2022-25883 fix) published
+# without provenance after 7.x had it; it is a known false positive. Pulled in
+# by @babel/core. Exact version only.
+trustPolicyExclude:
+  - semver@6.3.1
+
+# Only direct dependencies may come from git URLs / tarballs.
+blockExoticSubdeps: true
+
+# Refuse to install packages whose `engines` do not match the current Node.
+engineStrict: true

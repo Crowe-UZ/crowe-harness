@@ -1,6 +1,12 @@
 import { createContext, useContext } from "react";
+import { isOneOf } from "./guards";
 
-export type Theme = "light" | "dark" | "system";
+export const THEMES = ["light", "dark", "system"] as const;
+export type Theme = (typeof THEMES)[number];
+
+export function isTheme(value: unknown): value is Theme {
+  return isOneOf(THEMES, value);
+}
 
 export interface ThemeContextValue {
   theme: Theme;
@@ -21,7 +27,7 @@ export function useTheme(): ThemeContextValue {
 export function readStoredTheme(fallback: Theme): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return stored === "light" || stored === "dark" || stored === "system" ? stored : fallback;
+    return isTheme(stored) ? stored : fallback;
   } catch {
     return fallback;
   }

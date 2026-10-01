@@ -2,12 +2,12 @@ import { Check, Circle, CircleX, LoaderCircle } from "lucide-react";
 import type { ActivityItem, ActivityStatus } from "@/data/types";
 import { cn } from "@/lib/utils";
 
-const STATUS_LABEL: Record<ActivityStatus, string> = {
+const STATUS_LABEL = {
   done: "Done",
   running: "In progress",
   pending: "Pending",
   error: "Failed",
-};
+} satisfies Record<ActivityStatus, string>;
 
 export function ActivityList({ items }: { items: ActivityItem[] }) {
   if (items.length === 0) return null;

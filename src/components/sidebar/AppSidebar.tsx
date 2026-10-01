@@ -8,7 +8,8 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
-import { Link, useMatch, useNavigate } from "react-router";
+import type { ReactNode } from "react";
+import { Link, useMatch } from "react-router";
 import { useShallow } from "zustand/shallow";
 import {
   Sidebar,
@@ -24,6 +25,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { useRouteContext } from "@/hooks/use-route-context";
+import { useStartSession } from "@/hooks/use-start-session";
 import { sortByLastOpened, useProjectStore } from "@/stores/projectStore";
 import { sessionsForProject, useSessionStore } from "@/stores/sessionStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -35,14 +37,13 @@ const TOOLS = [
 ] as const;
 
 export function AppSidebar() {
-  const navigate = useNavigate();
   const { projectId, sessionId } = useRouteContext();
   const projects = useProjectStore(useShallow((s) => sortByLastOpened(s.projects)));
   const activeProjectId = projectId ?? projects[0]?.id;
   const sessions = useSessionStore(useShallow((s) => sessionsForProject(s.sessions, activeProjectId).slice(0, 8)));
-  const createSession = useSessionStore((s) => s.createSession);
   const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
   const activeProject = projects.find((p) => p.id === activeProjectId);
+  const startSession = useStartSession(activeProject?.id);
 
   return (
     <Sidebar collapsible="icon" className="top-(--topbar-h) bottom-(--statusbar-h) h-auto">
@@ -97,10 +98,7 @@ export function AppSidebar() {
             <SidebarGroupAction
               title="New session"
               aria-label="New session"
-              onClick={() => {
-                const session = createSession(activeProject.id);
-                navigate(`/projects/${activeProject.id}/sessions/${session.id}`);
-              }}
+              onClick={startSession}
             >
               <Plus />
             </SidebarGroupAction>
@@ -165,7 +163,7 @@ function NavMenuButton({
   to: string;
   label: string;
   end?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const isActive = useMatch({ path: to, end }) !== null;
   return (

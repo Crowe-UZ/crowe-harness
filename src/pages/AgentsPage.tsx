@@ -64,6 +64,17 @@ export function AgentsPage() {
 }
 
 function CreateAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {/* Mounted only while open so every opening starts with a clean form. */}
+        {open ? <CreateAgentForm onDone={() => onOpenChange(false)} /> : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateAgentForm({ onDone }: { onDone: () => void }) {
   const addAgent = useSettingsStore((s) => s.addAgent);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -76,50 +87,43 @@ function CreateAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     if (!name.trim()) return;
     addAgent({ name, description });
     toast.success(`Agent “${name.trim()}” created`, { description: "Saved locally. Runtime support arrives with Claude Code integration." });
-    setName("");
-    setDescription("");
-    setSubmitted(false);
-    onOpenChange(false);
+    onDone();
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={onSubmit} noValidate className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Create agent</DialogTitle>
-            <DialogDescription>The agent is saved in Crowe Harness. Running agents requires the Claude runtime.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="agent-name">Name</Label>
-            <Input
-              id="agent-name"
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Docs Writer"
-              aria-invalid={nameError || undefined}
-            />
-            {nameError ? <p className="text-xs text-destructive">Enter a name.</p> : null}
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="agent-description">Description</Label>
-            <Textarea
-              id="agent-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="When should Claude use this agent?"
-              rows={3}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit">Create agent</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+      <DialogHeader>
+        <DialogTitle>Create agent</DialogTitle>
+        <DialogDescription>The agent is saved in Crowe Harness. Running agents requires the Claude runtime.</DialogDescription>
+      </DialogHeader>
+      <div className="grid gap-2">
+        <Label htmlFor="agent-name">Name</Label>
+        <Input
+          id="agent-name"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Docs Writer"
+          aria-invalid={nameError || undefined}
+        />
+        {nameError ? <p className="text-xs text-destructive">Enter a name.</p> : null}
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="agent-description">Description</Label>
+        <Textarea
+          id="agent-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="When should Claude use this agent?"
+          rows={3}
+        />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit">Create agent</Button>
+      </DialogFooter>
+    </form>
   );
 }
