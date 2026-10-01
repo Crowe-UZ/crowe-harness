@@ -24,6 +24,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRouteContext } from "@/hooks/use-route-context";
 import { useStartSession } from "@/hooks/use-start-session";
 import { sortByLastOpened, useProjectStore } from "@/stores/projectStore";
@@ -33,7 +34,7 @@ import { useUiStore } from "@/stores/uiStore";
 const TOOLS = [
   { to: "/agents", label: "Agents", icon: Bot },
   { to: "/skills", label: "Skills", icon: Sparkles },
-  { to: "/mcp", label: "MCP", icon: Plug },
+  { to: "/mcp", label: "MCP servers", icon: Plug },
 ] as const;
 
 export function AppSidebar() {
@@ -46,16 +47,21 @@ export function AppSidebar() {
   const startSession = useStartSession(activeProject?.id);
 
   return (
-    <Sidebar collapsible="icon" className="top-(--topbar-h) bottom-(--statusbar-h) h-auto">
+    <Sidebar
+      collapsible="icon"
+      role="navigation"
+      aria-label="Main"
+      className="top-(--topbar-h) bottom-(--statusbar-h) h-auto"
+    >
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="New Project" onClick={() => setNewProjectOpen(true)}>
+                <SidebarMenuButton tooltip="New project" onClick={() => setNewProjectOpen(true)}>
                   <Plus />
-                  <span>New Project</span>
+                  <span>New project</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -71,16 +77,19 @@ export function AppSidebar() {
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {projects.slice(0, 6).map((project) => (
-                <SidebarMenuItem key={project.id}>
-                  <SidebarMenuButton asChild tooltip={project.name} isActive={project.id === projectId && !sessionId}>
-                    <Link to={`/projects/${project.id}`}>
-                      <FolderGit2 />
-                      <span>{project.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {projects.slice(0, 6).map((project) => {
+                const isActive = project.id === projectId && !sessionId;
+                return (
+                  <SidebarMenuItem key={project.id}>
+                    <SidebarMenuButton asChild tooltip={project.name} isActive={isActive}>
+                      <Link to={`/projects/${project.id}`} aria-current={isActive ? "page" : undefined}>
+                        <FolderGit2 />
+                        <span>{project.name}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
               {projects.length > 6 ? (
                 <SidebarMenuItem>
                   <NavMenuButton to="/projects" label="All projects" end>
@@ -95,24 +104,28 @@ export function AppSidebar() {
         {activeProject ? (
           <SidebarGroup>
             <SidebarGroupLabel>Sessions · {activeProject.name.replace(/^Project /, "")}</SidebarGroupLabel>
-            <SidebarGroupAction
-              title="New session"
-              aria-label="New session"
-              onClick={startSession}
-            >
-              <Plus />
-            </SidebarGroupAction>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarGroupAction aria-label="New session" onClick={startSession}>
+                  <Plus />
+                </SidebarGroupAction>
+              </TooltipTrigger>
+              <TooltipContent side="right">New session</TooltipContent>
+            </Tooltip>
             <SidebarGroupContent>
               <SidebarMenu>
                 {sessions.length === 0 ? (
-                  <p className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                  <li className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
                     No sessions yet
-                  </p>
+                  </li>
                 ) : null}
                 {sessions.map((session) => (
                   <SidebarMenuItem key={session.id}>
                     <SidebarMenuButton asChild tooltip={session.title} isActive={session.id === sessionId}>
-                      <Link to={`/projects/${session.projectId}/sessions/${session.id}`}>
+                      <Link
+                        to={`/projects/${session.projectId}/sessions/${session.id}`}
+                        aria-current={session.id === sessionId ? "page" : undefined}
+                      >
                         <MessageSquare />
                         <span>{session.title}</span>
                       </Link>
@@ -168,7 +181,7 @@ function NavMenuButton({
   const isActive = useMatch({ path: to, end }) !== null;
   return (
     <SidebarMenuButton asChild tooltip={label} isActive={isActive}>
-      <Link to={to}>
+      <Link to={to} aria-current={isActive ? "page" : undefined}>
         {children}
         <span>{label}</span>
       </Link>

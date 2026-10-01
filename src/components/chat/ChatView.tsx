@@ -2,6 +2,7 @@ import { MessageSquareDashed } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { EmptyState } from "@/components/common/EmptyState";
 import type { ChatMessage } from "@/data/types";
+import type { PermissionDecision } from "@/features/ai/types";
 import { isBusy, useChatStore } from "@/stores/chatStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -15,7 +16,7 @@ const PIN_THRESHOLD = 48;
 
 export function ChatView({ sessionId, projectId }: { sessionId: string; projectId: string }) {
   const messages = useChatStore((s) => s.conversations[sessionId] ?? NO_MESSAGES);
-  const busy = useChatStore((s) => isBusy(s.status[sessionId]));
+  const status = useChatStore((s) => s.status[sessionId]);
   const error = useChatStore((s) => s.errors[sessionId]);
   const pendingPermission = useChatStore((s) => s.pendingPermission[sessionId]);
   const send = useChatStore((s) => s.send);
@@ -24,7 +25,10 @@ export function ChatView({ sessionId, projectId }: { sessionId: string; projectI
   const touchSession = useSessionStore((s) => s.touchSession);
   const touchProject = useProjectStore((s) => s.touchProject);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const pinnedRef = useRef(true);
+  const running = status === "running";
+  const busy = isBusy(status);
 
   // `messages` changes identity on every streamed update (text, activity, status).
   useEffect(() => {
@@ -44,6 +48,18 @@ export function ChatView({ sessionId, projectId }: { sessionId: string; projectI
     void send(sessionId, text);
   };
 
+  const onDecide = (decision: PermissionDecision) => {
+    void respondToPermission(sessionId, decision);
+    // The prompt unmounts after a decision; hand focus back to the composer instead of losing it.
+    composerRef.current?.focus();
+  };
+
+  const statusText = running
+    ? "Assistant is responding"
+    : status === "awaiting_permission"
+      ? "Waiting for your permission"
+      : "";
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
@@ -52,6 +68,8 @@ export function ChatView({ sessionId, projectId }: { sessionId: string; projectI
         className="min-h-0 flex-1 overflow-y-auto"
         role="log"
         aria-live="polite"
+        aria-relevant="additions"
+        aria-busy={running || undefined}
         aria-label="Conversation"
       >
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
@@ -64,21 +82,19 @@ export function ChatView({ sessionId, projectId }: { sessionId: string; projectI
           ) : (
             messages.map((message) => <MessageItem key={message.id} message={message} />)
           )}
-          {error ? (
-            <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
         </div>
       </div>
+      <p role="status" className="sr-only">
+        {statusText}
+      </p>
       <div className="mx-auto w-full max-w-3xl space-y-3 px-6 pb-4">
-        {pendingPermission ? (
-          <PermissionPrompt
-            request={pendingPermission}
-            onDecide={(decision) => void respondToPermission(sessionId, decision)}
-          />
+        {error ? (
+          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
         ) : null}
-        <Composer running={busy} onSend={onSend} onStop={() => void stop(sessionId)} />
+        {pendingPermission ? <PermissionPrompt request={pendingPermission} onDecide={onDecide} /> : null}
+        <Composer inputRef={composerRef} running={busy} onSend={onSend} onStop={() => void stop(sessionId)} />
       </div>
     </div>
   );

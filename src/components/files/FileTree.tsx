@@ -7,11 +7,14 @@ interface VisibleNode {
   node: FileNode;
   depth: number;
   parent?: string;
+  /** 1-based position among its siblings and the sibling count (aria-posinset / aria-setsize). */
+  posInSet: number;
+  setSize: number;
 }
 
 function flatten(nodes: FileNode[], expanded: ReadonlySet<string>, depth = 0, parent?: string): VisibleNode[] {
-  return nodes.flatMap((node) => [
-    { node, depth, parent },
+  return nodes.flatMap((node, index) => [
+    { node, depth, parent, posInSet: index + 1, setSize: nodes.length },
     ...(node.kind === "dir" && expanded.has(node.path) ? flatten(node.children ?? [], expanded, depth + 1, node.path) : []),
   ]);
 }
@@ -92,7 +95,7 @@ export function FileTree({
   return (
     <div role="tree" aria-label={label} className="py-1 text-sm">
       {visible.map((item, index) => {
-        const { node, depth } = item;
+        const { node, depth, posInSet, setSize } = item;
         const isDir = node.kind === "dir";
         const isOpen = isDir && expanded.has(node.path);
         const isSelected = node.path === selected;
@@ -106,6 +109,8 @@ export function FileTree({
             }}
             role="treeitem"
             aria-level={depth + 1}
+            aria-setsize={setSize}
+            aria-posinset={posInSet}
             aria-expanded={isDir ? isOpen : undefined}
             aria-selected={isDir ? undefined : isSelected}
             tabIndex={node.path === (focused ?? visible[0]?.node.path) ? 0 : -1}
@@ -116,8 +121,10 @@ export function FileTree({
             onKeyDown={(e) => onKeyDown(e, item, index)}
             style={{ paddingLeft: `${depth * 14 + 8}px` }}
             className={cn(
-              "flex cursor-default items-center gap-1.5 rounded-md py-1 pr-2 outline-none select-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset",
-              isSelected && "bg-accent text-accent-foreground hover:bg-accent",
+              "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-2 outline-none select-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+              // Selection is not conveyed by color alone: a primary bar on the left edge plus medium weight.
+              isSelected &&
+                "bg-accent font-medium text-accent-foreground before:absolute before:inset-y-1 before:left-0.5 before:w-1 before:rounded-full before:bg-primary hover:bg-accent",
             )}
           >
             {isDir ? (

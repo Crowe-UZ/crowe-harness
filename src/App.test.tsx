@@ -12,7 +12,7 @@ describe("App", () => {
   it("renders the home screen inside the shell", async () => {
     render(<App />);
     expect(await screen.findByText("Welcome to Crowe Harness.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent Projects" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent projects" })).toBeInTheDocument();
     expect(screen.getAllByText("Project Atlas").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Status bar")).toHaveTextContent(/v\d+\.\d+\.\d+/);
   });

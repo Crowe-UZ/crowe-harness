@@ -27,7 +27,7 @@ export class MockAuthService implements AuthService {
 
   async startLogin(): Promise<void> {
     await wait(this.delayMs);
-    throw new Error("Sign-in with Claude becomes available in milestone M2.");
+    throw new Error("Sign-in with Claude will be available in a future update.");
   }
 
   async logout(): Promise<void> {

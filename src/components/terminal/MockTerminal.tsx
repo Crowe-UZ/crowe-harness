@@ -46,8 +46,9 @@ export function MockTerminal({ projectId, cwd }: { projectId: string; cwd: strin
           <Eraser data-icon="inline-start" /> Clear
         </Button>
       </div>
+      {/* Clicking the output focuses the prompt (mouse convenience; keyboard users tab to the input). */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto bg-surface px-4 py-3 font-mono text-[13px] leading-6"
+        className="min-h-0 flex-1 overflow-y-auto bg-surface px-4 pt-3 font-mono text-[13px] leading-6"
         onClick={() => inputRef.current?.focus()}
         role="log"
         aria-label="Terminal output"
@@ -66,25 +67,29 @@ export function MockTerminal({ projectId, cwd }: { projectId: string; cwd: strin
             {line.text || " "}
           </div>
         ))}
-        <form onSubmit={onSubmit} className="flex items-center gap-2">
-          <span className="text-primary" aria-hidden="true">
-            $
-          </span>
-          <label htmlFor="terminal-input" className="sr-only">
-            Terminal command
-          </label>
-          <input
-            id="terminal-input"
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            className="flex-1 bg-transparent outline-none"
-          />
-        </form>
         <div ref={bottomRef} />
       </div>
+      {/* The prompt lives outside role="log" so typing is not part of the announced output. */}
+      <form
+        onSubmit={onSubmit}
+        className="flex shrink-0 items-center gap-2 bg-surface px-4 pt-1 pb-3 font-mono text-[13px] leading-6 focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset"
+      >
+        <span className="text-primary" aria-hidden="true">
+          $
+        </span>
+        <label htmlFor="terminal-input" className="sr-only">
+          Terminal command
+        </label>
+        <input
+          id="terminal-input"
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          autoComplete="off"
+          spellCheck={false}
+          className="flex-1 bg-transparent outline-none"
+        />
+      </form>
     </div>
   );
 }

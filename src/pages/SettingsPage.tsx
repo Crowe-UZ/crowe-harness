@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Page, PageHeader } from "@/components/common/PageHeader";
+import { usePageTitle } from "@/components/common/use-page-title";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeAuthStatus, type AuthStatus } from "@/features/ai/auth";
 import { services } from "@/features/ai/services";
 import { isPermissionMode, type PermissionMode } from "@/features/ai/types";
@@ -44,6 +46,7 @@ export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab");
   const section: Section = isOneOf(SECTIONS, requested) ? requested : "general";
+  usePageTitle(LABELS[section], "Settings");
 
   return (
     <Page>
@@ -95,17 +98,24 @@ function SettingsSection({ title, description, children }: { title: string; desc
   );
 }
 
+/** Pass `aria-describedby={hintId(htmlFor)}` on the control to associate the hint with it. */
 function Row({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-6 px-4 py-3">
       <div className="min-w-0 space-y-0.5">
         <Label htmlFor={htmlFor}>{label}</Label>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+        {hint ? (
+          <p id={htmlFor ? hintId(htmlFor) : undefined} className="text-xs text-muted-foreground">
+            {hint}
+          </p>
+        ) : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
   );
 }
+
+const hintId = (id: string) => `${id}-hint`;
 
 function GeneralSettings() {
   const openLast = useSettingsStore((s) => s.openLastProjectOnStartup);
@@ -116,7 +126,13 @@ function GeneralSettings() {
   return (
     <SettingsSection title="General" description="Workspace defaults.">
       <Row label="Default projects folder" hint="Suggested location for new projects." htmlFor="projects-folder">
-        <Input id="projects-folder" value={folder} onChange={(e) => setFolder(e.target.value)} className="w-64 font-mono text-xs" />
+        <Input
+          id="projects-folder"
+          value={folder}
+          onChange={(e) => setFolder(e.target.value)}
+          aria-describedby={hintId("projects-folder")}
+          className="w-64 font-mono text-xs"
+        />
       </Row>
       <Row label="Open last project on startup" htmlFor="open-last">
         <Switch id="open-last" checked={openLast} onCheckedChange={setOpenLast} />
@@ -161,6 +177,14 @@ function AccountSettings() {
   const refresh = useAuthStore((s) => s.refresh);
   const signOut = useAuthStore((s) => s.signOut);
   const [guideOpen, setGuideOpen] = useState(false);
+  // aria-disabled instead of disabled: a focused button that became disabled while loading would drop focus.
+  const busyProps = {
+    "aria-disabled": loading || undefined,
+    className: "aria-disabled:pointer-events-none aria-disabled:opacity-50",
+  } as const;
+  const whenIdle = (action: () => void) => () => {
+    if (!loading) action();
+  };
 
   return (
     <div className="space-y-6">
@@ -176,15 +200,26 @@ function AccountSettings() {
             <p className="text-sm font-medium">{describeAuthStatus(status)}</p>
             <p className="text-xs text-muted-foreground">{statusDetail(status)}</p>
           </div>
-          <Button variant="ghost" size="icon-sm" aria-label="Refresh status" onClick={() => void refresh()} disabled={loading}>
-            <RefreshCw />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Refresh status"
+                onClick={whenIdle(() => void refresh())}
+                {...busyProps}
+              >
+                <RefreshCw />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh status</TooltipContent>
+          </Tooltip>
           {status?.state === "signed_in" ? (
-            <Button variant="outline" size="sm" onClick={() => void signOut()} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={whenIdle(() => void signOut())} {...busyProps}>
               Sign out
             </Button>
           ) : (
-            <Button size="sm" onClick={() => setGuideOpen(true)} disabled={loading}>
+            <Button size="sm" onClick={whenIdle(() => setGuideOpen(true))} {...busyProps}>
               Sign in with Claude
             </Button>
           )}
@@ -224,7 +259,7 @@ function SignInGuideDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Sign in with Claude</DialogTitle>
-          <DialogDescription>How sign-in works once the Claude runtime is connected (milestone M2).</DialogDescription>
+          <DialogDescription>How sign-in will work once the Claude runtime is connected in a future update.</DialogDescription>
         </DialogHeader>
         <ol className="space-y-3">
           {steps.map(({ icon: Icon, text }, i) => (
@@ -260,21 +295,33 @@ function SecuritySettings() {
   return (
     <div className="space-y-6">
       <SettingsSection title="Permissions" description="Default permission mode for new sessions.">
-        <div className="px-4 py-3">
-          <RadioGroup value={mode} onValueChange={(value) => {
+        <fieldset className="px-4 py-3">
+          <legend className="sr-only">Default permission mode</legend>
+          <RadioGroup
+            value={mode}
+            onValueChange={(value) => {
               if (isPermissionMode(value)) setMode(value);
-            }} className="grid gap-3">
+            }}
+            className="grid gap-3"
+          >
             {modes.map((m) => (
               <div key={m.value} className="flex items-start gap-2">
-                <RadioGroupItem value={m.value} id={`mode-${m.value}`} className="mt-0.5" />
+                <RadioGroupItem
+                  value={m.value}
+                  id={`mode-${m.value}`}
+                  aria-describedby={hintId(`mode-${m.value}`)}
+                  className="mt-0.5"
+                />
                 <div>
                   <Label htmlFor={`mode-${m.value}`}>{m.label}</Label>
-                  <p className="text-xs text-muted-foreground">{m.hint}</p>
+                  <p id={hintId(`mode-${m.value}`)} className="text-xs text-muted-foreground">
+                    {m.hint}
+                  </p>
                 </div>
               </div>
             ))}
           </RadioGroup>
-        </div>
+        </fieldset>
       </SettingsSection>
       <SettingsSection title="Privacy">
         {[
@@ -314,9 +361,15 @@ function AdvancedSettings() {
 
   return (
     <div className="space-y-6">
-      <SettingsSection title="Claude Code" description="Runtime location. Configurable once the Claude Code adapter ships (M2).">
+      <SettingsSection title="Claude Code" description="Runtime location. This becomes configurable in a future update.">
         <Row label="Claude Code path" hint="Auto-detected from PATH." htmlFor="claude-path">
-          <Input id="claude-path" disabled placeholder="claude" className="w-64 font-mono text-xs" />
+          <Input
+            id="claude-path"
+            disabled
+            placeholder="claude"
+            aria-describedby={hintId("claude-path")}
+            className="w-64 font-mono text-xs"
+          />
         </Row>
       </SettingsSection>
 

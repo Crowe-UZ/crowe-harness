@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeAuthStatus } from "@/features/ai/auth";
 import { useRouteContext } from "@/hooks/use-route-context";
@@ -24,12 +24,14 @@ export function TopBar() {
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   const authStatus = useAuthStore((s) => s.status);
   const account = authStatus?.state === "signed_in" ? authStatus.email : undefined;
+  const sidebar = useSidebar();
+  const sidebarExpanded = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
 
   return (
     <header className="flex h-(--topbar-h) shrink-0 items-center gap-2 border-b bg-sidebar px-2">
       <Tooltip>
         <TooltipTrigger asChild>
-          <SidebarTrigger aria-label="Toggle sidebar" />
+          <SidebarTrigger aria-label="Toggle sidebar" aria-expanded={sidebarExpanded} />
         </TooltipTrigger>
         <TooltipContent>
           Toggle sidebar <Kbd>Ctrl+B</Kbd>
@@ -38,7 +40,7 @@ export function TopBar() {
 
       <Link
         to="/"
-        className="flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-3 focus-visible:ring-ring"
       >
         <Logo className="size-5" />
         <span className="text-sm font-semibold tracking-tight">Crowe Harness</span>

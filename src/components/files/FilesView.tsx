@@ -65,7 +65,8 @@ export function FilesView({ projectId, projectName, projectPath }: { projectId: 
       <aside className="w-64 shrink-0 overflow-y-auto border-r bg-surface px-1.5 py-2">
         <p className="px-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{projectName}</p>
         {!currentTree ? (
-          <div className="space-y-2 px-2 py-1" aria-busy="true" aria-label="Loading files">
+          <div className="space-y-2 px-2 py-1" role="status">
+            <span className="sr-only">Loading files…</span>
             {[60, 80, 50, 70].map((w) => (
               <Skeleton key={w} className="h-4" style={{ width: `${w}%` }} />
             ))}
@@ -108,7 +109,8 @@ export function FilesView({ projectId, projectName, projectPath }: { projectId: 
               </span>
             </div>
             {!currentFile ? (
-              <div className="space-y-2 p-4" aria-busy="true" aria-label="Loading file">
+              <div className="space-y-2 p-4" role="status">
+                <span className="sr-only">Loading file…</span>
                 {[70, 45, 85, 60, 30].map((w) => (
                   <Skeleton key={w} className="h-4" style={{ width: `${w}%` }} />
                 ))}
@@ -135,7 +137,7 @@ function CodeView({ content }: { content: string }) {
         <code>
           {lines.map((line, i) => (
             <div key={i} className="flex hover:bg-muted/60">
-              <span className="w-12 shrink-0 pr-4 text-right text-muted-foreground/70 select-none" aria-hidden="true">
+              <span className="w-12 shrink-0 pr-4 text-right text-muted-foreground select-none" aria-hidden="true">
                 {i + 1}
               </span>
               <span className="pr-6 whitespace-pre">{line || " "}</span>

@@ -88,8 +88,8 @@
   --muted-foreground: oklch(0.5 0.012 258);
   --accent: var(--brand-accent);
   --accent-foreground: oklch(0.25 0.03 258);
-  --destructive: oklch(0.56 0.2 27);
-  --success: oklch(0.56 0.13 155);
+  --destructive: oklch(0.53 0.2 27);
+  --success: oklch(0.5 0.13 155);
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.7 0.14 75);
   --warning-foreground: oklch(0.2 0.03 75);
@@ -133,7 +133,7 @@
   --muted-foreground: oklch(0.7 0.012 258);
   --accent: var(--brand-accent);
   --accent-foreground: oklch(0.95 0.01 258);
-  --destructive: oklch(0.68 0.18 25);
+  --destructive: oklch(0.72 0.16 25);
   --success: oklch(0.72 0.14 155);
   --success-foreground: oklch(0.17 0.02 155);
   --warning: oklch(0.8 0.13 80);
@@ -159,7 +159,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   html,
   body,

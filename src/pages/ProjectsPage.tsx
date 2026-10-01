@@ -1,8 +1,9 @@
-import { FolderSearch, Plus, Search } from "lucide-react";
+import { FolderPlus, FolderSearch, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { useShallow } from "zustand/shallow";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Page, PageHeader } from "@/components/common/PageHeader";
+import { usePageTitle } from "@/components/common/use-page-title";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ export function ProjectsPage() {
   const filtered = q
     ? projects.filter((p) => `${p.name} ${p.language} ${p.path}`.toLowerCase().includes(q))
     : projects;
+  usePageTitle("Projects");
 
   return (
     <Page>
@@ -25,7 +27,7 @@ export function ProjectsPage() {
         description={`${projects.length} project${projects.length === 1 ? "" : "s"} in your workspace`}
         actions={
           <Button size="sm" onClick={() => setNewProjectOpen(true)}>
-            <Plus data-icon="inline-start" /> New Project
+            <Plus data-icon="inline-start" /> New project
           </Button>
         }
       />
@@ -39,7 +41,18 @@ export function ProjectsPage() {
           className="pl-8"
         />
       </div>
-      {filtered.length === 0 ? (
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={FolderPlus}
+          title="No projects yet"
+          description="Create a project to start a session with Claude."
+          action={
+            <Button variant="outline" size="sm" onClick={() => setNewProjectOpen(true)}>
+              <Plus data-icon="inline-start" /> New project
+            </Button>
+          }
+        />
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={FolderSearch}
           title="No matching projects"

@@ -2,6 +2,7 @@ import { Check, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { mockSessionStats } from "@/data/mock";
 import type { Session } from "@/data/types";
 import { formatRelativeTime } from "@/lib/time";
@@ -21,9 +22,14 @@ export function SessionInspector({ session, onClose }: { session?: Session; onCl
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l bg-surface" aria-label="Session inspector">
       <div className="flex h-9 shrink-0 items-center justify-between border-b px-4">
         <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Inspector</span>
-        <Button variant="ghost" size="icon-xs" aria-label="Close inspector" onClick={onClose}>
-          <X />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" aria-label="Close inspector" onClick={onClose}>
+              <X />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Close inspector</TooltipContent>
+        </Tooltip>
       </div>
       <div className="space-y-4 p-4 text-sm">
         <Section title="Session">

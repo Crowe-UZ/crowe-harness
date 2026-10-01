@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { RequiredMark } from "@/components/common/RequiredMark";
+import { useFocusFirstInvalid } from "@/components/common/use-focus-first-invalid";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -38,15 +40,19 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [language, setLanguage] = useState<ProjectLanguage>("TypeScript");
-  const [submitted, setSubmitted] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  useFocusFirstInvalid(formRef, attempt);
 
-  const nameError = submitted && !name.trim() ? "Enter a project name." : undefined;
+  const nameError = attempt > 0 && !name.trim() ? "Enter a project name." : undefined;
   const effectivePath = path.trim() || `${baseFolder}\\${slug(name) || "new-project"}`;
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
-    setSubmitted(true);
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setAttempt((n) => n + 1);
+      return;
+    }
     const project = addProject({ name, path: effectivePath, language });
     toast.success(`${project.name} added`, { description: "Demo project — no files were created on disk." });
     onDone();
@@ -54,23 +60,26 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+    <form ref={formRef} onSubmit={onSubmit} noValidate className="grid gap-4">
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          Register a project in the workspace. In this version projects are demo entries; opening real folders arrives
-          with the file system milestone.
+          Register a project in the workspace. In this version projects are demo entries; opening real folders is
+          coming in a future update.
         </DialogDescription>
       </DialogHeader>
 
       <div className="grid gap-2">
-        <Label htmlFor="project-name">Name</Label>
+        <Label htmlFor="project-name">
+          Name <RequiredMark />
+        </Label>
         <Input
           id="project-name"
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Project Orion"
+          aria-required="true"
           aria-invalid={nameError ? true : undefined}
           aria-describedby={nameError ? "project-name-error" : undefined}
         />
@@ -88,8 +97,12 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder={effectivePath}
+          aria-describedby="project-path-hint"
           className="font-mono text-xs"
         />
+        <p id="project-path-hint" className="text-xs text-muted-foreground">
+          Optional. Leave empty to use the folder shown.
+        </p>
       </div>
 
       <div className="grid gap-2">
@@ -100,7 +113,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
           onChange={(e) => {
             if (isOneOf(PROJECT_LANGUAGES, e.target.value)) setLanguage(e.target.value);
           }}
-          className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring dark:bg-input/30"
         >
           {PROJECT_LANGUAGES.map((l) => (
             <option key={l} value={l}>

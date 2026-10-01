@@ -19,7 +19,7 @@ export function StatusBar() {
       </span>
       <Link
         to="/settings?tab=account"
-        className="flex items-center gap-1.5 rounded px-1 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex items-center gap-1.5 rounded px-1 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span
           className={cn("size-2 rounded-full", signedIn ? "bg-success" : "bg-muted-foreground/50")}

@@ -41,9 +41,7 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Cha
           </p>
         ) : null}
         {message.status === "error" ? (
-          <p className="text-xs text-destructive" role="alert">
-            The response failed. Try again.
-          </p>
+          <p className="text-xs text-destructive">The response failed.</p>
         ) : null}
       </div>
     </article>

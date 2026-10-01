@@ -1,7 +1,9 @@
-import { ArrowRight, KeyRound, MessageSquare, Plus } from "lucide-react";
+import { ArrowRight, FolderPlus, KeyRound, MessageSquare, MessagesSquare, Plus } from "lucide-react";
 import { Link } from "react-router";
 import { useShallow } from "zustand/shallow";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Page } from "@/components/common/PageHeader";
+import { usePageTitle } from "@/components/common/use-page-title";
 import { ProjectCard } from "@/components/projects/ProjectCard";
 import { Button } from "@/components/ui/button";
 import { formatRelativeTime, greeting } from "@/lib/time";
@@ -16,6 +18,7 @@ export function HomePage() {
   const sessions = useSessionStore(useShallow((s) => sortSessionsByUpdated(s.sessions).slice(0, 5)));
   const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
   const authState = useAuthStore((s) => s.status?.state);
+  usePageTitle("Home");
 
   return (
     <Page>
@@ -43,7 +46,7 @@ export function HomePage() {
       <section className="space-y-3" aria-labelledby="recent-projects">
         <div className="flex items-center justify-between">
           <h2 id="recent-projects" className="text-sm font-medium">
-            Recent Projects
+            Recent projects
           </h2>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" asChild>
@@ -52,38 +55,63 @@ export function HomePage() {
               </Link>
             </Button>
             <Button size="sm" onClick={() => setNewProjectOpen(true)}>
-              <Plus data-icon="inline-start" /> New Project
+              <Plus data-icon="inline-start" /> New project
             </Button>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
-          ))}
-        </div>
+        {projects.length === 0 ? (
+          <EmptyState
+            icon={FolderPlus}
+            title="No projects yet"
+            description="Create a project to start a session with Claude."
+            action={
+              <Button variant="outline" size="sm" onClick={() => setNewProjectOpen(true)}>
+                <Plus data-icon="inline-start" /> New project
+              </Button>
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {projects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="space-y-3" aria-labelledby="recent-sessions">
         <h2 id="recent-sessions" className="text-sm font-medium">
-          Recent Sessions
+          Recent sessions
         </h2>
-        <ul className="divide-y rounded-lg border">
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <Link
-                to={`/projects/${session.projectId}/sessions/${session.id}`}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset"
-              >
-                <MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span className="flex-1 truncate">{session.title}</span>
-                <span className="text-xs text-muted-foreground">{projectNames[session.projectId]}</span>
-                <span className="w-28 text-right text-xs text-muted-foreground">
-                  {formatRelativeTime(session.updatedAt)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {sessions.length === 0 ? (
+          <EmptyState
+            icon={MessagesSquare}
+            title="No sessions yet"
+            description={
+              projects.length === 0
+                ? "Sessions appear here once you create a project and start working in it."
+                : "Open a project and start a session — your recent sessions will appear here."
+            }
+          />
+        ) : (
+          <ul className="divide-y rounded-lg border">
+            {sessions.map((session) => (
+              <li key={session.id}>
+                <Link
+                  to={`/projects/${session.projectId}/sessions/${session.id}`}
+                  className="flex items-center gap-3 px-4 py-2.5 text-sm outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring focus-visible:ring-inset"
+                >
+                  <MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />
+                  <span className="flex-1 truncate">{session.title}</span>
+                  <span className="text-xs text-muted-foreground">{projectNames[session.projectId]}</span>
+                  <span className="w-28 text-right text-xs text-muted-foreground">
+                    {formatRelativeTime(session.updatedAt)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </Page>
   );

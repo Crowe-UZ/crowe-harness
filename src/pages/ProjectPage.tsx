@@ -1,9 +1,10 @@
 import { FolderX, GitBranch, MessageSquarePlus, PanelRight, SearchX } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link, Navigate, useParams } from "react-router";
 import { useShallow } from "zustand/shallow";
 import { ChatView } from "@/components/chat/ChatView";
 import { EmptyState } from "@/components/common/EmptyState";
+import { usePageTitle } from "@/components/common/use-page-title";
 import { FilesView } from "@/components/files/FilesView";
 import { SessionInspector } from "@/components/sessions/SessionInspector";
 import { MockTerminal } from "@/components/terminal/MockTerminal";
@@ -27,6 +28,10 @@ export function ProjectPage() {
   const tab = useWorkspaceStore((s) => (projectId ? s.workspaces[projectId]?.tab : undefined) ?? "chat");
   const setTab = useWorkspaceStore((s) => s.setTab);
   const startSession = useStartSession(project?.id);
+  const inspectorToggleRef = useRef<HTMLButtonElement>(null);
+  const session = project && sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
+  const sessionTitle = sessionId ? (session?.title ?? "Session not found") : undefined;
+  usePageTitle(...(project ? [sessionTitle, project.name] : ["Project not found"]));
 
   useEffect(() => {
     if (projectId) touchProject(projectId);
@@ -55,7 +60,11 @@ export function ProjectPage() {
     return <Navigate replace to={`/projects/${project.id}/sessions/${latest.id}`} />;
   }
 
-  const session = sessionId ? sessions.find((s) => s.id === sessionId) : undefined;
+  const closeInspector = () => {
+    setInspectorOpen(false);
+    // The close button disappears with the panel; continue from the control that opens it again.
+    inspectorToggleRef.current?.focus();
+  };
 
   return (
     <Tabs
@@ -85,9 +94,10 @@ export function ProjectPage() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                ref={inspectorToggleRef}
                 variant={inspectorOpen ? "secondary" : "ghost"}
                 size="icon-sm"
-                aria-label="Toggle inspector"
+                aria-label="Inspector"
                 aria-pressed={inspectorOpen}
                 onClick={() => setInspectorOpen(!inspectorOpen)}
               >
@@ -140,7 +150,7 @@ export function ProjectPage() {
             <MockTerminal key={project.id} projectId={project.id} cwd={project.path} />
           </TabsContent>
         </div>
-        {inspectorOpen ? <SessionInspector session={session} onClose={() => setInspectorOpen(false)} /> : null}
+        {inspectorOpen ? <SessionInspector session={session} onClose={closeInspector} /> : null}
       </div>
     </Tabs>
   );

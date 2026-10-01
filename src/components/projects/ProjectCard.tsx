@@ -8,7 +8,7 @@ export function ProjectCard({ project }: { project: Project }) {
   return (
     <Link
       to={`/projects/${project.id}`}
-      className="group flex flex-col gap-3 rounded-lg border bg-card p-4 text-card-foreground shadow-xs transition-colors outline-none hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="group flex flex-col gap-3 rounded-lg border bg-card p-4 text-card-foreground shadow-xs transition-colors outline-none hover:border-primary/40 hover:bg-accent/40 focus-visible:ring-3 focus-visible:ring-ring"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">

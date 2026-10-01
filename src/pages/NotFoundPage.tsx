@@ -1,9 +1,11 @@
 import { Compass, TriangleAlert } from "lucide-react";
 import { isRouteErrorResponse, Link, useRouteError } from "react-router";
 import { EmptyState } from "@/components/common/EmptyState";
+import { usePageTitle } from "@/components/common/use-page-title";
 import { Button } from "@/components/ui/button";
 
 export function NotFoundPage() {
+  usePageTitle("Page not found");
   return (
     <div className="flex h-full items-center justify-center p-8">
       <EmptyState
@@ -22,6 +24,7 @@ export function NotFoundPage() {
 
 export function RouteErrorPage() {
   const error = useRouteError();
+  usePageTitle("Something went wrong");
   const message = isRouteErrorResponse(error)
     ? `${error.status} ${error.statusText}`
     : error instanceof Error

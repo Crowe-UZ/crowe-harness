@@ -1,18 +1,23 @@
 import { Paperclip, SendHorizontal, Square } from "lucide-react";
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent, type KeyboardEvent, type Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+const ATTACH_HINT_ID = "composer-attach-hint";
+
 export function Composer({
   running,
   onSend,
   onStop,
+  inputRef,
 }: {
   running: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  /** Lets the parent return focus to the message field (e.g. after a permission decision). */
+  inputRef?: Ref<HTMLTextAreaElement>;
 }) {
   const [text, setText] = useState("");
   const canSend = text.trim().length > 0 && !running;
@@ -34,13 +39,14 @@ export function Composer({
   return (
     <form
       onSubmit={submit}
-      className="rounded-xl border bg-card shadow-xs transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30"
+      className="rounded-xl border bg-card shadow-xs transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring"
     >
       <label htmlFor="composer" className="sr-only">
         Message
       </label>
       <Textarea
         id="composer"
+        ref={inputRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
@@ -56,21 +62,53 @@ export function Composer({
           <Tooltip>
             <TooltipTrigger asChild>
               {/* aria-disabled keeps the button focusable so the tooltip is reachable by keyboard */}
-              <Button type="button" variant="ghost" size="sm" aria-disabled="true" className="opacity-50" onClick={(e) => e.preventDefault()}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-disabled="true"
+                aria-describedby={ATTACH_HINT_ID}
+                className="cursor-not-allowed opacity-50 hover:bg-transparent! hover:text-inherit! active:translate-y-0!"
+                onClick={(e) => e.preventDefault()}
+              >
                 <Paperclip data-icon="inline-start" /> Attach
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Attachments arrive with the Claude runtime</TooltipContent>
+            <TooltipContent>Attachments are coming in a future update</TooltipContent>
           </Tooltip>
-          {running ? (
-            <Button type="button" variant="secondary" size="sm" onClick={onStop}>
-              <Square data-icon="inline-start" /> Stop
-            </Button>
-          ) : (
-            <Button type="submit" size="sm" disabled={!canSend}>
-              Send <SendHorizontal data-icon="inline-end" />
-            </Button>
-          )}
+          <span id={ATTACH_HINT_ID} className="sr-only">
+            Unavailable. Attachments are coming in a future update.
+          </span>
+          {/*
+            One persistent button that switches between Send and Stop, so keyboard focus is never
+            dropped when a response starts or ends. aria-disabled (not disabled) keeps it focusable.
+          */}
+          <Button
+            type={running ? "button" : "submit"}
+            variant={running ? "secondary" : "default"}
+            size="sm"
+            aria-disabled={!running && !canSend ? true : undefined}
+            onClick={
+              running
+                ? (e) => {
+                    // Never let a Stop click fall through to a form submit if the button re-renders first.
+                    e.preventDefault();
+                    onStop();
+                  }
+                : undefined
+            }
+            className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-primary! aria-disabled:active:translate-y-0!"
+          >
+            {running ? (
+              <>
+                <Square data-icon="inline-start" /> Stop
+              </>
+            ) : (
+              <>
+                Send <SendHorizontal data-icon="inline-end" />
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </form>
