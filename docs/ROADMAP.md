@@ -3,8 +3,9 @@
 Требования — в [SPEC.md](SPEC.md). Каждый milestone заканчивается проверками и отдельным commit:
 
 ```
-pnpm lint && pnpm typecheck && pnpm test && pnpm build
-cargo clippy -- -D warnings && cargo test        # с M2
+pnpm check          # = lint && typecheck (tsc -b) && test && build
+pnpm lint:rust      # = cargo fmt --check && cargo clippy --all-targets -- -D warnings
+cargo test          # в src-tauri, с M2
 ```
 
 плюс ручная проверка UI (`pnpm dev` → http://localhost:1420 или `pnpm tauri dev`).

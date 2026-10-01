@@ -92,10 +92,10 @@ export function TopBar() {
               <div className="text-xs font-normal text-muted-foreground">Claude: {describeAuthStatus(authStatus)}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => navigate("/settings?tab=account")}>
+            <DropdownMenuItem onSelect={() => void navigate("/settings?tab=account")}>
               <KeyRound /> Claude account
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => navigate("/settings")}>
+            <DropdownMenuItem onSelect={() => void navigate("/settings")}>
               <Settings /> Settings
             </DropdownMenuItem>
           </DropdownMenuContent>

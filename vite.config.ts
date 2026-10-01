@@ -8,7 +8,7 @@ import pkg from "./package.json" with { type: "json" };
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(() => ({
+export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
@@ -48,8 +48,18 @@ export default defineConfig(() => ({
 
   test: {
     environment: "jsdom",
-    globals: true,
+    include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    // Isolation: every test starts with real implementations and globals.
+    restoreMocks: true,
+    unstubGlobals: true,
+    unstubEnvs: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/components/ui/**", "src/test/**", "src/**/*.test.{ts,tsx}", "src/main.tsx", "src/**/*.d.ts"],
+      reporter: ["text", "text-summary", "html"],
+    },
   },
-}));
+});

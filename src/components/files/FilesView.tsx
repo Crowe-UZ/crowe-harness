@@ -15,7 +15,15 @@ type FileResult = { path: string } & ({ kind: "ready"; content: string } | { kin
 const NO_NODES: FileNode[] = [];
 
 /** Read-only project browser. Selection and expanded folders live in the per-project workspace store. */
-export function FilesView({ projectId, projectName, projectPath }: { projectId: string; projectName: string; projectPath: string }) {
+export function FilesView({
+  projectId,
+  projectName,
+  projectPath,
+}: {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+}) {
   const selected = useWorkspaceStore((s) => s.workspaces[projectId]?.selectedFile);
   const storedExpanded = useWorkspaceStore((s) => s.workspaces[projectId]?.expandedDirs);
   const setSelectedFile = useWorkspaceStore((s) => s.setSelectedFile);
@@ -98,7 +106,11 @@ export function FilesView({ projectId, projectName, projectPath }: { projectId: 
       <section className="flex min-w-0 flex-1 flex-col" aria-label="File preview">
         {!selected ? (
           <div className="flex flex-1 items-center justify-center p-8">
-            <EmptyState icon={FileQuestion} title="Select a file" description="Choose a file in the tree to preview it. Use the arrow keys to navigate." />
+            <EmptyState
+              icon={FileQuestion}
+              title="Select a file"
+              description="Choose a file in the tree to preview it. Use the arrow keys to navigate."
+            />
           </div>
         ) : (
           <>
@@ -117,7 +129,12 @@ export function FilesView({ projectId, projectName, projectPath }: { projectId: 
               </div>
             ) : currentFile.kind === "error" ? (
               <div className="p-8">
-                <EmptyState icon={FileWarning} tone="danger" title="Could not open file" description={currentFile.message} />
+                <EmptyState
+                  icon={FileWarning}
+                  tone="danger"
+                  title="Could not open file"
+                  description={currentFile.message}
+                />
               </div>
             ) : (
               <CodeView content={currentFile.content} />

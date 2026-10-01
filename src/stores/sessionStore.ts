@@ -24,7 +24,11 @@ function parsePersisted(value: unknown): Partial<PersistedSessions> {
 }
 
 /** Applies `fn` to the session with `id`; returns the same state for unknown ids (no re-render). */
-function updateSession(state: SessionState, id: string, fn: (s: Session) => Session): SessionState | Partial<SessionState> {
+function updateSession(
+  state: SessionState,
+  id: string,
+  fn: (s: Session) => Session,
+): SessionState | Partial<SessionState> {
   if (!state.sessions.some((s) => s.id === id)) return state;
   return { sessions: state.sessions.map((s) => (s.id === id ? fn(s) : s)) };
 }
@@ -39,8 +43,10 @@ export const useSessionStore = create<SessionState>()(
         set((state) => ({ sessions: [session, ...state.sessions] }));
         return session;
       },
-      renameSession: (id, title) => set((state) => updateSession(state, id, (s) => ({ ...s, title: title.trim() || s.title }))),
-      touchSession: (id) => set((state) => updateSession(state, id, (s) => ({ ...s, updatedAt: new Date().toISOString() }))),
+      renameSession: (id, title) =>
+        set((state) => updateSession(state, id, (s) => ({ ...s, title: title.trim() || s.title }))),
+      touchSession: (id) =>
+        set((state) => updateSession(state, id, (s) => ({ ...s, updatedAt: new Date().toISOString() }))),
       setRuntimeSessionId: (id, runtimeSessionId) =>
         set((state) =>
           state.sessions.some((s) => s.id === id && s.runtimeSessionId !== runtimeSessionId)

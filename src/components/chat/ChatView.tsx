@@ -89,7 +89,10 @@ export function ChatView({ sessionId, projectId }: { sessionId: string; projectI
       </p>
       <div className="mx-auto w-full max-w-3xl space-y-3 px-6 pb-4">
         {error ? (
-          <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <p
+            role="alert"
+            className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
             {error}
           </p>
         ) : null}

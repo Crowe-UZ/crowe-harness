@@ -86,7 +86,15 @@ export function SettingsPage() {
   );
 }
 
-function SettingsSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="space-y-4">
       <div className="space-y-1">
@@ -99,7 +107,17 @@ function SettingsSection({ title, description, children }: { title: string; desc
 }
 
 /** Pass `aria-describedby={hintId(htmlFor)}` on the control to associate the hint with it. */
-function Row({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
+function Row({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="flex items-center justify-between gap-6 px-4 py-3">
       <div className="min-w-0 space-y-0.5">
@@ -154,9 +172,13 @@ function AppearanceSettings() {
       <div className="px-4 py-3">
         <fieldset>
           <legend className="mb-3 text-sm font-medium">Theme</legend>
-          <RadioGroup value={theme} onValueChange={(value) => {
+          <RadioGroup
+            value={theme}
+            onValueChange={(value) => {
               if (isTheme(value)) setTheme(value);
-            }} className="grid gap-2">
+            }}
+            className="grid gap-2"
+          >
             {THEMES.map(({ value, label }) => (
               <div key={value} className="flex items-center gap-2">
                 <RadioGroupItem value={value} id={`theme-${value}`} />
@@ -194,7 +216,11 @@ function AccountSettings() {
       >
         <div className="flex items-center gap-4 px-4 py-4">
           <div className="flex size-9 items-center justify-center rounded-md bg-accent text-accent-foreground">
-            {loading ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
+            {loading ? (
+              <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <KeyRound className="size-4" aria-hidden="true" />
+            )}
           </div>
           <div className="min-w-0 flex-1" aria-live="polite">
             <p className="text-sm font-medium">{describeAuthStatus(status)}</p>
@@ -251,15 +277,23 @@ function statusDetail(status: AuthStatus | undefined): string {
 function SignInGuideDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const steps = [
     { icon: TerminalSquare, text: "Crowe Harness checks that Claude Code is installed on this computer." },
-    { icon: KeyRound, text: "It opens Claude Code's own sign-in (claude auth login) — you sign in with your Claude account in the browser." },
-    { icon: ShieldCheck, text: "Your session stays inside Claude Code. Crowe Harness only reads the sign-in status and plan name." },
+    {
+      icon: KeyRound,
+      text: "It opens Claude Code's own sign-in (claude auth login) — you sign in with your Claude account in the browser.",
+    },
+    {
+      icon: ShieldCheck,
+      text: "Your session stays inside Claude Code. Crowe Harness only reads the sign-in status and plan name.",
+    },
   ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Sign in with Claude</DialogTitle>
-          <DialogDescription>How sign-in will work once the Claude runtime is connected in a future update.</DialogDescription>
+          <DialogDescription>
+            How sign-in will work once the Claude runtime is connected in a future update.
+          </DialogDescription>
         </DialogHeader>
         <ol className="space-y-3">
           {steps.map(({ icon: Icon, text }, i) => (
@@ -288,7 +322,11 @@ function SecuritySettings() {
   const setMode = useSettingsStore((s) => s.setDefaultPermissionMode);
   const modes: { value: PermissionMode; label: string; hint: string }[] = [
     { value: "default", label: "Ask before changes", hint: "Claude asks before editing files or running commands." },
-    { value: "acceptEdits", label: "Auto-accept edits", hint: "File edits are applied; commands still require approval." },
+    {
+      value: "acceptEdits",
+      label: "Auto-accept edits",
+      hint: "File edits are applied; commands still require approval.",
+    },
     { value: "plan", label: "Plan only", hint: "Claude analyses and proposes a plan without changing anything." },
   ];
 
@@ -361,7 +399,10 @@ function AdvancedSettings() {
 
   return (
     <div className="space-y-6">
-      <SettingsSection title="Claude Code" description="Runtime location. This becomes configurable in a future update.">
+      <SettingsSection
+        title="Claude Code"
+        description="Runtime location. This becomes configurable in a future update."
+      >
         <Row label="Claude Code path" hint="Auto-detected from PATH." htmlFor="claude-path">
           <Input
             id="claude-path"
@@ -374,7 +415,10 @@ function AdvancedSettings() {
       </SettingsSection>
 
       {canPreviewAuth ? (
-        <SettingsSection title="Demo: account state" description="Preview how the interface reacts to each Claude sign-in state.">
+        <SettingsSection
+          title="Demo: account state"
+          description="Preview how the interface reacts to each Claude sign-in state."
+        >
           <div className="flex flex-wrap gap-2 px-4 py-3">
             <Button variant="outline" size="sm" onClick={() => previewAuth({ state: "cli_not_found" })}>
               Claude Code missing
@@ -386,7 +430,13 @@ function AdvancedSettings() {
               variant="outline"
               size="sm"
               onClick={() =>
-                previewAuth({ state: "signed_in", method: "claude.ai", email: "dev@example.com", orgName: "Example Org", subscriptionType: "team" })
+                previewAuth({
+                  state: "signed_in",
+                  method: "claude.ai",
+                  email: "dev@example.com",
+                  orgName: "Example Org",
+                  subscriptionType: "team",
+                })
               }
             >
               Signed in (Team)

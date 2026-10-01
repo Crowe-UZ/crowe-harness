@@ -30,7 +30,9 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Cha
         {message.text ? (
           <div className="text-sm leading-relaxed whitespace-pre-wrap">
             {message.text}
-            {streaming ? <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-text-bottom" /> : null}
+            {streaming ? (
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-text-bottom" />
+            ) : null}
           </div>
         ) : streaming ? (
           <p className="text-sm text-muted-foreground">Working…</p>
@@ -40,9 +42,7 @@ export const MessageItem = memo(function MessageItem({ message }: { message: Cha
             <span className="rounded bg-warning px-1.5 py-0.5">Stopped</span>
           </p>
         ) : null}
-        {message.status === "error" ? (
-          <p className="text-xs text-destructive">The response failed.</p>
-        ) : null}
+        {message.status === "error" ? <p className="text-xs text-destructive">The response failed.</p> : null}
       </div>
     </article>
   );

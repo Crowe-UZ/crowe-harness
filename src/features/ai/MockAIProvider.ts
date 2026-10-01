@@ -1,12 +1,5 @@
 import { wait } from "@/lib/async";
-import type {
-  AIEvent,
-  AIProvider,
-  Attachment,
-  PermissionDecision,
-  StartSessionOptions,
-  StopReason,
-} from "./types";
+import type { AIEvent, AIProvider, Attachment, PermissionDecision, StartSessionOptions, StopReason } from "./types";
 
 const STEPS = [
   { name: "Read", label: "Reading project files" },
@@ -48,9 +41,9 @@ export class MockAIProvider implements AIProvider {
     this.askPermissionFor = new Set(options.askPermissionFor ?? []);
   }
 
-  async startSession(options: StartSessionOptions): Promise<string> {
+  startSession(options: StartSessionOptions): Promise<string> {
     // Like `claude --resume`, resuming keeps the runtime session id.
-    return options.resumeSessionId ?? this.nextId("mock-session");
+    return Promise.resolve(options.resumeSessionId ?? this.nextId("mock-session"));
   }
 
   async *sendMessage(sessionId: string, text: string, _attachments?: Attachment[]): AsyncIterable<AIEvent> {
@@ -99,22 +92,26 @@ export class MockAIProvider implements AIProvider {
     yield this.end(messageId, "end_turn");
   }
 
-  async interrupt(sessionId: string): Promise<void> {
+  interrupt(sessionId: string): Promise<void> {
     this.interrupted.add(sessionId);
     this.cancelPermissions(sessionId);
+    return Promise.resolve();
   }
 
-  async respondToPermission(requestId: string, decision: PermissionDecision): Promise<void> {
+  respondToPermission(requestId: string, decision: PermissionDecision): Promise<void> {
     const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
-    this.pendingPermissions.delete(requestId);
-    pending.resolve(decision);
+    if (pending) {
+      this.pendingPermissions.delete(requestId);
+      pending.resolve(decision);
+    }
+    return Promise.resolve();
   }
 
-  async stopSession(sessionId: string): Promise<void> {
+  stopSession(sessionId: string): Promise<void> {
     this.interrupted.add(sessionId);
     this.cancelPermissions(sessionId);
     this.allowedForSession.delete(sessionId);
+    return Promise.resolve();
   }
 
   private needsPermission(sessionId: string, tool: string): boolean {

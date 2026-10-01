@@ -100,7 +100,8 @@ function AddServerForm({ onDone }: { onDone: () => void }) {
   useFocusFirstInvalid(formRef, attempt);
   const targetLabel = transport === "http" ? "URL" : "Command";
   const nameError = attempt > 0 && !name.trim() ? "Enter a server name." : undefined;
-  const targetError = attempt > 0 && !target.trim() ? (transport === "http" ? "Enter a URL." : "Enter a command.") : undefined;
+  const targetError =
+    attempt > 0 && !target.trim() ? (transport === "http" ? "Enter a URL." : "Enter a command.") : undefined;
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -109,7 +110,9 @@ function AddServerForm({ onDone }: { onDone: () => void }) {
       return;
     }
     addMcpServer({ name, transport, target });
-    toast.success(`${name.trim()} added`, { description: "Saved as not connected. Connections are coming in a future update." });
+    toast.success(`${name.trim()} added`, {
+      description: "Saved as not connected. Connections are coming in a future update.",
+    });
     onDone();
   }
 

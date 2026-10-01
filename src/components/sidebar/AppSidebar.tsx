@@ -1,13 +1,4 @@
-import {
-  Bot,
-  FolderGit2,
-  Home,
-  MessageSquare,
-  Plus,
-  Plug,
-  Settings,
-  Sparkles,
-} from "lucide-react";
+import { Bot, FolderGit2, Home, MessageSquare, Plus, Plug, Settings, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useMatch } from "react-router";
 import { useShallow } from "zustand/shallow";

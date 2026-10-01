@@ -34,7 +34,7 @@ export function EmptyState({
         <Icon className="size-5" aria-hidden="true" />
       </div>
       <div className="space-y-1">
-        <p className="text-sm font-medium">{title}</p>
+        <h2 className="text-sm font-medium">{title}</h2>
         {description ? <p className="max-w-sm text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {action}

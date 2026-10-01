@@ -15,9 +15,7 @@ export function ProjectsPage() {
   const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? projects.filter((p) => `${p.name} ${p.language} ${p.path}`.toLowerCase().includes(q))
-    : projects;
+  const filtered = q ? projects.filter((p) => `${p.name} ${p.language} ${p.path}`.toLowerCase().includes(q)) : projects;
   usePageTitle("Projects");
 
   return (
@@ -32,7 +30,10 @@ export function ProjectsPage() {
         }
       />
       <div className="relative max-w-sm">
-        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+        <Search
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}

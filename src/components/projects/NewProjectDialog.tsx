@@ -56,7 +56,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
     const project = addProject({ name, path: effectivePath, language });
     toast.success(`${project.name} added`, { description: "Demo project — no files were created on disk." });
     onDone();
-    navigate(`/projects/${project.id}`);
+    void navigate(`/projects/${project.id}`);
   }
 
   return (
@@ -64,8 +64,8 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          Register a project in the workspace. In this version projects are demo entries; opening real folders is
-          coming in a future update.
+          Register a project in the workspace. In this version projects are demo entries; opening real folders is coming
+          in a future update.
         </DialogDescription>
       </DialogHeader>
 

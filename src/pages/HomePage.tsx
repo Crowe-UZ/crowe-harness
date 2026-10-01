@@ -35,7 +35,9 @@ export function HomePage() {
           <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
           <p className="flex-1 text-sm">
             Sign in with your Claude subscription to enable AI sessions.{" "}
-            <span className="text-muted-foreground">Sign-in goes through Claude Code; Crowe Harness never stores credentials.</span>
+            <span className="text-muted-foreground">
+              Sign-in goes through Claude Code; Crowe Harness never stores credentials.
+            </span>
           </p>
           <Button variant="outline" size="sm" asChild>
             <Link to="/settings?tab=account">Open account settings</Link>

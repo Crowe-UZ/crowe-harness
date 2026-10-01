@@ -108,7 +108,9 @@ function CreateAgentForm({ onDone }: { onDone: () => void }) {
       return;
     }
     addAgent({ name, description });
-    toast.success(`Agent “${name.trim()}” created`, { description: "Saved locally. Runtime support arrives with Claude Code integration." });
+    toast.success(`Agent “${name.trim()}” created`, {
+      description: "Saved locally. Runtime support arrives with Claude Code integration.",
+    });
     onDone();
   }
 
@@ -116,7 +118,9 @@ function CreateAgentForm({ onDone }: { onDone: () => void }) {
     <form ref={formRef} onSubmit={onSubmit} noValidate className="grid gap-4">
       <DialogHeader>
         <DialogTitle>Create agent</DialogTitle>
-        <DialogDescription>The agent is saved in Crowe Harness. Running agents requires the Claude runtime.</DialogDescription>
+        <DialogDescription>
+          The agent is saved in Crowe Harness. Running agents requires the Claude runtime.
+        </DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">
         <Label htmlFor="agent-name">

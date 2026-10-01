@@ -43,28 +43,33 @@ export function CommandPalette() {
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Jump to a page, project or session">
+    <CommandDialog
+      open={open}
+      onOpenChange={setOpen}
+      title="Command palette"
+      description="Jump to a page, project or session"
+    >
       <Command>
         <CommandInput placeholder="Type a command or search…" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
           <CommandGroup heading="Navigation">
-            <CommandItem onSelect={() => run(() => navigate("/"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/"))}>
               <Home /> Home
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate("/projects"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/projects"))}>
               <FolderGit2 /> All projects
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate("/agents"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/agents"))}>
               <Bot /> Agents
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate("/skills"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/skills"))}>
               <Sparkles /> Skills
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate("/mcp"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/mcp"))}>
               <Plug /> MCP servers
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate("/settings"))}>
+            <CommandItem onSelect={() => run(() => void navigate("/settings"))}>
               <Settings /> Settings
             </CommandItem>
           </CommandGroup>
@@ -80,7 +85,11 @@ export function CommandPalette() {
           <CommandSeparator />
           <CommandGroup heading="Projects">
             {projects.map((p) => (
-              <CommandItem key={p.id} value={`project ${p.name} ${p.id}`} onSelect={() => run(() => navigate(`/projects/${p.id}`))}>
+              <CommandItem
+                key={p.id}
+                value={`project ${p.name} ${p.id}`}
+                onSelect={() => run(() => void navigate(`/projects/${p.id}`))}
+              >
                 <FolderGit2 /> {p.name}
               </CommandItem>
             ))}
@@ -90,7 +99,7 @@ export function CommandPalette() {
               <CommandItem
                 key={s.id}
                 value={`session ${s.title} ${s.id}`}
-                onSelect={() => run(() => navigate(`/projects/${s.projectId}/sessions/${s.id}`))}
+                onSelect={() => run(() => void navigate(`/projects/${s.projectId}/sessions/${s.id}`))}
               >
                 <MessageSquare /> {s.title}
               </CommandItem>

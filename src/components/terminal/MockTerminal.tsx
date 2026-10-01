@@ -42,7 +42,13 @@ export function MockTerminal({ projectId, cwd }: { projectId: string; cwd: strin
         <TerminalSquare className="size-3.5" aria-hidden="true" />
         <span className="font-mono">{cwd}</span>
         <span className="rounded border px-1.5 leading-4">Demo · commands are not executed</span>
-        <Button variant="ghost" size="xs" className="ml-auto" onClick={() => clearTerminal(projectId)} disabled={lines.length === 0}>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="ml-auto"
+          onClick={() => clearTerminal(projectId)}
+          disabled={lines.length === 0}
+        >
           <Eraser data-icon="inline-start" /> Clear
         </Button>
       </div>

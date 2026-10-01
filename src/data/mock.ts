@@ -129,11 +129,26 @@ export const mockAgents: Agent[] = [
 ];
 
 export const mockSkills: Skill[] = [
-  { id: "code-review", name: "Code Review", description: "Structured review of diffs for correctness and style.", enabled: true },
+  {
+    id: "code-review",
+    name: "Code Review",
+    description: "Structured review of diffs for correctness and style.",
+    enabled: true,
+  },
   { id: "testing", name: "Testing", description: "Plans, writes and runs unit and integration tests.", enabled: true },
   { id: "documentation", name: "Documentation", description: "Drafts READMEs, ADRs and inline docs.", enabled: false },
-  { id: "refactoring", name: "Refactoring", description: "Safe, incremental refactors with test coverage.", enabled: true },
-  { id: "security", name: "Security", description: "Flags injection, secrets and unsafe dependencies.", enabled: false },
+  {
+    id: "refactoring",
+    name: "Refactoring",
+    description: "Safe, incremental refactors with test coverage.",
+    enabled: true,
+  },
+  {
+    id: "security",
+    name: "Security",
+    description: "Flags injection, secrets and unsafe dependencies.",
+    enabled: false,
+  },
 ];
 
 export const mockMcpServers: McpServer[] = [

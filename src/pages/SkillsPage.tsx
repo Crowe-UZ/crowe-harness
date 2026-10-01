@@ -40,7 +40,9 @@ export function SkillsPage() {
                     {skill.description}
                   </p>
                 </div>
-                <span className="w-16 text-right text-xs text-muted-foreground">{skill.enabled ? "Enabled" : "Disabled"}</span>
+                <span className="w-16 text-right text-xs text-muted-foreground">
+                  {skill.enabled ? "Enabled" : "Disabled"}
+                </span>
                 <Switch
                   id={id}
                   checked={skill.enabled}

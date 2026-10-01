@@ -36,7 +36,7 @@ interface WorkspaceState {
 }
 
 let nextLineId = 0;
-const toTerminalLines =(lines: Omit<TerminalLine, "id">[]): TerminalLine[] =>
+const toTerminalLines = (lines: Omit<TerminalLine, "id">[]): TerminalLine[] =>
   lines.map((line) => ({ ...line, id: nextLineId++ }));
 
 /** Demo output shown in a project's terminal before it is used or cleared. */

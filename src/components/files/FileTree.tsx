@@ -15,7 +15,9 @@ interface VisibleNode {
 function flatten(nodes: FileNode[], expanded: ReadonlySet<string>, depth = 0, parent?: string): VisibleNode[] {
   return nodes.flatMap((node, index) => [
     { node, depth, parent, posInSet: index + 1, setSize: nodes.length },
-    ...(node.kind === "dir" && expanded.has(node.path) ? flatten(node.children ?? [], expanded, depth + 1, node.path) : []),
+    ...(node.kind === "dir" && expanded.has(node.path)
+      ? flatten(node.children ?? [], expanded, depth + 1, node.path)
+      : []),
   ]);
 }
 
@@ -136,7 +138,10 @@ export function FileTree({
             ) : (
               <span className="w-3.5" aria-hidden="true" />
             )}
-            <Icon className={cn("size-4 shrink-0", isDir ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+            <Icon
+              className={cn("size-4 shrink-0", isDir ? "text-primary" : "text-muted-foreground")}
+              aria-hidden="true"
+            />
             <span className="truncate">{node.name}</span>
           </div>
         );

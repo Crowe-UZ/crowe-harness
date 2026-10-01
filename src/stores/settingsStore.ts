@@ -72,7 +72,8 @@ function parsePersisted(value: unknown): Partial<PersistedSettings> {
   if (!isRecord(value)) return {};
   const result: Partial<PersistedSettings> = {};
   if (typeof value.inspectorOpen === "boolean") result.inspectorOpen = value.inspectorOpen;
-  if (typeof value.openLastProjectOnStartup === "boolean") result.openLastProjectOnStartup = value.openLastProjectOnStartup;
+  if (typeof value.openLastProjectOnStartup === "boolean")
+    result.openLastProjectOnStartup = value.openLastProjectOnStartup;
   if (isString(value.defaultProjectsFolder)) result.defaultProjectsFolder = value.defaultProjectsFolder;
   if (isPermissionMode(value.defaultPermissionMode)) result.defaultPermissionMode = value.defaultPermissionMode;
   const customAgents = filterValid(value.customAgents, isAgent);
@@ -89,7 +90,8 @@ function migrateFromV1(value: Record<string, unknown>): Record<string, unknown> 
   const skillEnabled: Record<string, boolean> = {};
   if (Array.isArray(skills)) {
     for (const skill of skills) {
-      if (isRecord(skill) && isString(skill.id) && typeof skill.enabled === "boolean") skillEnabled[skill.id] = skill.enabled;
+      if (isRecord(skill) && isString(skill.id) && typeof skill.enabled === "boolean")
+        skillEnabled[skill.id] = skill.enabled;
     }
   }
   return {
@@ -112,7 +114,13 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           agents: [
             ...state.agents,
-            { id: createId("agent"), name: name.trim(), description: description.trim(), tools: ["Read"], builtIn: false },
+            {
+              id: createId("agent"),
+              name: name.trim(),
+              description: description.trim(),
+              tools: ["Read"],
+              builtIn: false,
+            },
           ],
         })),
       toggleSkill: (id, enabled) =>
@@ -155,7 +163,12 @@ export const useSettingsStore = create<SettingsState>()(
       },
       // Built-in catalogs always come from code, so new built-ins appear after an update.
       merge: (persisted, current) => {
-        const { customAgents = [], customMcpServers = [], skillEnabled = {}, ...preferences } = parsePersisted(persisted);
+        const {
+          customAgents = [],
+          customMcpServers = [],
+          skillEnabled = {},
+          ...preferences
+        } = parsePersisted(persisted);
         return { ...current, ...preferences, ...catalogState(customAgents, customMcpServers, skillEnabled) };
       },
     },

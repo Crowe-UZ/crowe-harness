@@ -47,7 +47,9 @@ export const useProjectStore = create<ProjectState>()(
       touchProject: (id) =>
         set((state) =>
           state.projects.some((p) => p.id === id)
-            ? { projects: state.projects.map((p) => (p.id === id ? { ...p, lastOpened: new Date().toISOString() } : p)) }
+            ? {
+                projects: state.projects.map((p) => (p.id === id ? { ...p, lastOpened: new Date().toISOString() } : p)),
+              }
             : state,
         ),
       reset: () => set({ projects: createMockProjects() }),

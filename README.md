@@ -18,13 +18,13 @@ Crowe Harness is a desktop AI development workspace: projects, sessions, files, 
 
 ## Prerequisites
 
-| Tool | Version | Windows install |
-|---|---|---|
-| Node.js | 22 LTS or newer | https://nodejs.org |
-| pnpm | 10 or newer (the repo pins 12.8.1 via `packageManager`) | `npm i -g pnpm` |
-| Rust | stable, MSVC toolchain | `winget install --id Rustlang.Rustup -e`, then `rustup default stable-msvc` |
-| Microsoft C++ Build Tools | the "Desktop development with C++" workload | Visual Studio Installer |
-| WebView2 | Evergreen runtime | Preinstalled on Windows 10 (1803+) and 11 |
+| Tool                      | Version                                                 | Windows install                                                             |
+| ------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Node.js                   | 22 LTS or newer                                         | https://nodejs.org                                                          |
+| pnpm                      | 10 or newer (the repo pins 12.8.1 via `packageManager`) | `npm i -g pnpm`                                                             |
+| Rust                      | stable, MSVC toolchain                                  | `winget install --id Rustlang.Rustup -e`, then `rustup default stable-msvc` |
+| Microsoft C++ Build Tools | the "Desktop development with C++" workload             | Visual Studio Installer                                                     |
+| WebView2                  | Evergreen runtime                                       | Preinstalled on Windows 10 (1803+) and 11                                   |
 
 On macOS and Linux, follow the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) instead.
 
@@ -46,11 +46,20 @@ pnpm dev            # browser-only UI at http://localhost:1420
 Quality checks:
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm check          # lint + typecheck + test + build, run before every commit
+pnpm lint:rust      # cargo fmt --check + cargo clippy --all-targets -D warnings (in src-tauri)
 ```
+
+| Script                              | What it does                                                                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm lint`                         | ESLint with type-aware rules (`no-floating-promises`, `no-misused-promises`), Testing Library and Vitest rules for tests         |
+| `pnpm typecheck`                    | `tsc -b` over `tsconfig.app.json` (app), `tsconfig.test.json` (tests) and `tsconfig.node.json` (`vite.config.ts`); emits nothing |
+| `pnpm test` / `pnpm test:watch`     | Vitest (jsdom) once / in watch mode                                                                                              |
+| `pnpm coverage`                     | Tests with V8 coverage; HTML report in `coverage/`                                                                               |
+| `pnpm format` / `pnpm format:check` | Prettier write / check                                                                                                           |
+| `pnpm build`                        | Type-check and build the frontend into `dist/`                                                                                   |
+
+Tests live next to the code (`*.test.ts(x)`); shared helpers are in `src/test/` (`renderApp`, a scripted AI provider, a controllable `matchMedia`). Every test starts with fresh stores, empty storage and zero-delay mock services.
 
 ## Build
 
@@ -105,7 +114,7 @@ The UI talks only to the interfaces. `src/features/ai/services.ts` is the single
 
 ### Desktop shell hardening
 
-- **Capabilities.** `src-tauri/capabilities/default.json` grants nothing: the M1 frontend calls no Tauri APIs. Every future native command must be listed in `APP_COMMANDS` in `src-tauri/build.rs` *and* granted (`allow-<command>`) in a capability. See the "Security rules for native commands (M2+)" section in [docs/SPEC.md](docs/SPEC.md).
+- **Capabilities.** `src-tauri/capabilities/default.json` grants nothing: the M1 frontend calls no Tauri APIs. Every future native command must be listed in `APP_COMMANDS` in `src-tauri/build.rs` _and_ granted (`allow-<command>`) in a capability. See the "Security rules for native commands (M2+)" section in [docs/SPEC.md](docs/SPEC.md).
 - **CSP** (`app.security.csp` in `tauri.conf.json`): `'self'` only, no `data:`/`blob:`, no external hosts, `object-src`/`frame-src`/`base-uri`/`form-action` set to `'none'`.
   - The CSP is applied only to the bundled frontend (packaged builds and `tauri build`). In `pnpm tauri dev` the page is served by Vite at `http://localhost:1420` and the CSP is **not** enforced, so always test CSP-sensitive changes in a packaged build.
   - `index.html` must never contain an inline `<style>` or `<script>`. Tauri adds hashes/nonces for inline content it finds; a nonce in `style-src` makes browsers ignore `'unsafe-inline'`, which would break the inline styles Radix/React set at runtime.
