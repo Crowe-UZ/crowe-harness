@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-subagent-read"
+description = "Enables the subagent_read command without any pre-configured scope."
+commands.allow = ["subagent_read"]
+
+[[permission]]
+identifier = "deny-subagent-read"
+description = "Denies the subagent_read command without any pre-configured scope."
+commands.deny = ["subagent_read"]

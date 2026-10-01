@@ -1,7 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window. Least privilege: the M1 frontend calls no Tauri APIs, so nothing is granted. Add each permission (core:* or allow-<app_command>) only when a feature needs it; app commands must also be listed in build.rs (APP_COMMANDS).",
+  "description": "Capability for the main window. Least privilege: only the app's own native commands (docs/NATIVE_API.md) are granted; no core:* and no plugin permissions (the dialog plugin is used from Rust only). App commands must also be listed in build.rs (APP_COMMANDS). Streaming uses tauri::ipc::Channel, which needs no permission.",
   "windows": ["main"],
-  "permissions": []
+  "permissions": [
+    "allow-claude-status",
+    "allow-claude-auth-login",
+    "allow-claude-auth-logout",
+    "allow-projects-list",
+    "allow-projects-open-folder",
+    "allow-sessions-list",
+    "allow-session-read",
+    "allow-subagent-read",
+    "allow-turn-start",
+    "allow-turn-cancel",
+    "allow-fs-list-dir",
+    "allow-fs-read-file",
+    "allow-agents-list",
+    "allow-skills-list",
+    "allow-mcp-list"
+  ]
 }

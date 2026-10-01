@@ -3,54 +3,127 @@ import type { AuthStatus } from "@/features/ai/auth";
 import { services } from "@/features/ai/services";
 import { errorMessage } from "@/lib/errors";
 
+/** Timing of the sign-in flow. Mutable so tests can shorten it. */
+export const authTiming = {
+  /** How often the status is polled while the user completes sign-in in the browser. */
+  pollIntervalMs: 2_000,
+  /** Polling gives up after this long. */
+  pollTimeoutMs: 10 * 60_000,
+  /** Background re-check of the status while the app is open. */
+  recheckIntervalMs: 5 * 60_000,
+};
+
+export type SignInPhase =
+  | { phase: "idle" }
+  /** Claude Code's sign-in console is being opened. */
+  | { phase: "launching" }
+  /** Sign-in console is open; polling `claude_status` until the user is signed in. */
+  | { phase: "waiting" }
+  | { phase: "timed_out" }
+  | { phase: "failed"; message: string };
+
 interface AuthState {
+  /** Last known status; undefined until the first check finishes. */
   status: AuthStatus | undefined;
-  loading: boolean;
+  /** A visible status check is in flight. */
+  checking: boolean;
+  /** Error of the last visible check or account action. */
   error: string | undefined;
-  refresh: () => Promise<void>;
-  signIn: () => Promise<void>;
-  signOut: () => Promise<void>;
+  signIn: SignInPhase;
+  signingOut: boolean;
+  /** `silent`: background re-check (focus, timer) — no busy state, failures keep the previous status. */
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
+  startSignIn: () => Promise<void>;
+  cancelSignIn: () => void;
+  signOut: () => Promise<boolean>;
+  /** Stops any polling loop (tests, teardown). */
+  reset: () => void;
 }
 
-/** Only the latest auth request may write results or clear `loading`. */
-let latestRequest = 0;
+/** Always yields to the event loop (setTimeout), even for 0 ms, so a polling loop never starves the UI. */
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export const useAuthStore = create<AuthState>()((set, get) => {
-  const begin = () => {
-    latestRequest += 1;
-    set({ loading: true, error: undefined });
-    return latestRequest;
-  };
-  const isLatest = (request: number) => request === latestRequest;
+let latestCheck = 0;
+let loginRun = 0;
 
-  /** Runs a sign-in/out action, then refreshes the status (the refresh owns `loading` from then on). */
-  const runThenRefresh = async (action: () => Promise<void>) => {
-    const request = begin();
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  status: undefined,
+  checking: false,
+  error: undefined,
+  signIn: { phase: "idle" },
+  signingOut: false,
+
+  refresh: async ({ silent = false } = {}) => {
+    const request = ++latestCheck;
+    if (!silent) set({ checking: true, error: undefined });
     try {
-      await action();
+      const status = await services.auth.getStatus();
+      if (request === latestCheck) set({ status, error: undefined });
     } catch (error) {
-      if (isLatest(request)) set({ error: errorMessage(error), loading: false });
+      // A failed background check never signs the user out; a visible one reports the error.
+      if (request === latestCheck && (!silent || get().status === undefined)) set({ error: errorMessage(error) });
+    } finally {
+      if (request === latestCheck) set({ checking: false });
+    }
+  },
+
+  startSignIn: async () => {
+    const run = ++loginRun;
+    const isCurrent = () => run === loginRun;
+    set({ signIn: { phase: "launching" }, error: undefined });
+    try {
+      await services.auth.startLogin();
+    } catch (error) {
+      if (isCurrent()) set({ signIn: { phase: "failed", message: errorMessage(error) } });
       return;
     }
-    await get().refresh();
-  };
+    if (!isCurrent()) return;
+    set({ signIn: { phase: "waiting" } });
 
-  return {
-    status: undefined,
-    loading: false,
-    error: undefined,
-    refresh: async () => {
-      const request = begin();
+    const deadline = Date.now() + authTiming.pollTimeoutMs;
+    while (isCurrent()) {
+      await sleep(authTiming.pollIntervalMs);
+      if (!isCurrent()) return;
       try {
         const status = await services.auth.getStatus();
-        if (isLatest(request)) set({ status });
-      } catch (error) {
-        if (isLatest(request)) set({ error: errorMessage(error) });
-      } finally {
-        if (isLatest(request)) set({ loading: false });
+        if (!isCurrent()) return;
+        latestCheck += 1; // supersede any older check still in flight
+        set({ status, checking: false });
+        if (status.state === "signed_in" || status.state === "cli_not_found" || status.state === "unavailable") {
+          set({ signIn: { phase: "idle" } });
+          return;
+        }
+      } catch {
+        // Transient failure while the console is open: keep polling until the deadline.
       }
-    },
-    signIn: () => runThenRefresh(() => services.auth.startLogin()),
-    signOut: () => runThenRefresh(() => services.auth.logout()),
-  };
-});
+      if (Date.now() >= deadline) {
+        set({ signIn: { phase: "timed_out" } });
+        return;
+      }
+    }
+  },
+
+  cancelSignIn: () => {
+    loginRun += 1;
+    set({ signIn: { phase: "idle" } });
+  },
+
+  signOut: async () => {
+    loginRun += 1;
+    set({ signingOut: true, error: undefined, signIn: { phase: "idle" } });
+    try {
+      await services.auth.logout();
+    } catch (error) {
+      set({ signingOut: false, error: errorMessage(error) });
+      return false;
+    }
+    await get().refresh();
+    set({ signingOut: false });
+    return true;
+  },
+
+  reset: () => {
+    loginRun += 1;
+    latestCheck += 1;
+  },
+}));

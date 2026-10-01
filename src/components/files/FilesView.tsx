@@ -1,58 +1,44 @@
-import { FileQuestion, FileWarning, FolderX, Lock } from "lucide-react";
+import { FileQuestion, FileWarning, FolderOpen, FolderX, Lock, Scissors } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { FileContent } from "@/data/types";
 import { services } from "@/features/ai/services";
-import { collectDirs, type FileNode } from "@/features/workspace/fs";
+import { ROOT_DIR } from "@/features/workspace/fs";
 import { errorMessage } from "@/lib/errors";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useWorkspaceStore, type DirState } from "@/stores/workspaceStore";
 import { FileTree } from "./FileTree";
 
-type TreeResult = { attempt: number } & ({ kind: "ready"; nodes: FileNode[] } | { kind: "error"; message: string });
-type FileResult = { path: string } & ({ kind: "ready"; content: string } | { kind: "error"; message: string });
+type FileResult = { path: string } & ({ kind: "ready"; file: FileContent } | { kind: "error"; message: string });
 
-const NO_NODES: FileNode[] = [];
+const NO_DIRS: Record<string, DirState | undefined> = {};
+const NO_EXPANDED: string[] = [];
 
-/** Read-only project browser. Selection and expanded folders live in the per-project workspace store. */
-export function FilesView({
-  projectId,
-  projectName,
-  projectPath,
-}: {
-  projectId: string;
-  projectName: string;
-  projectPath: string;
-}) {
+/** Read-only project browser with a lazily loaded tree. State lives in the per-project workspace store. */
+export function FilesView({ projectId, projectName }: { projectId: string; projectName: string }) {
   const selected = useWorkspaceStore((s) => s.workspaces[projectId]?.selectedFile);
-  const storedExpanded = useWorkspaceStore((s) => s.workspaces[projectId]?.expandedDirs);
+  const storedExpanded = useWorkspaceStore((s) => s.workspaces[projectId]?.expandedDirs ?? NO_EXPANDED);
+  const dirs = useWorkspaceStore((s) => s.workspaces[projectId]?.dirs ?? NO_DIRS);
   const setSelectedFile = useWorkspaceStore((s) => s.setSelectedFile);
   const setExpandedDirs = useWorkspaceStore((s) => s.setExpandedDirs);
-  const [attempt, setAttempt] = useState(0);
-  const [tree, setTree] = useState<TreeResult>();
+  const loadDir = useWorkspaceStore((s) => s.loadDir);
   const [file, setFile] = useState<FileResult>();
+  const [fileAttempt, setFileAttempt] = useState(0);
+  const root = dirs[ROOT_DIR];
+  const expanded = useMemo(() => new Set(storedExpanded), [storedExpanded]);
 
   useEffect(() => {
-    let cancelled = false;
-    services.fs.tree(projectPath).then(
-      (nodes) => {
-        if (!cancelled) setTree({ attempt, kind: "ready", nodes });
-      },
-      (error: unknown) => {
-        if (!cancelled) setTree({ attempt, kind: "error", message: errorMessage(error) });
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, attempt]);
+    const current = useWorkspaceStore.getState().workspaces[projectId]?.dirs?.[ROOT_DIR];
+    if (!current) void loadDir(projectId, ROOT_DIR);
+  }, [projectId, loadDir]);
 
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
-    services.fs.read(projectPath, selected).then(
+    services.fs.readFile(projectId, selected).then(
       (content) => {
-        if (!cancelled) setFile({ path: selected, kind: "ready", content });
+        if (!cancelled) setFile({ path: selected, kind: "ready", file: content });
       },
       (error: unknown) => {
         if (!cancelled) setFile({ path: selected, kind: "error", message: errorMessage(error) });
@@ -61,44 +47,54 @@ export function FilesView({
     return () => {
       cancelled = true;
     };
-  }, [projectPath, selected]);
+  }, [projectId, selected, fileAttempt]);
 
-  const currentTree = tree?.attempt === attempt ? tree : undefined;
-  const nodes = currentTree?.kind === "ready" ? currentTree.nodes : NO_NODES;
-  const expanded = useMemo(() => new Set(storedExpanded ?? collectDirs(nodes)), [storedExpanded, nodes]);
+  const onToggle = (relPath: string, open: boolean) => {
+    const next = new Set(expanded);
+    if (open) next.add(relPath);
+    else next.delete(relPath);
+    setExpandedDirs(projectId, [...next]);
+    const state = useWorkspaceStore.getState().workspaces[projectId]?.dirs?.[relPath];
+    if (open && (!state || state.status === "error")) void loadDir(projectId, relPath);
+  };
+
   const currentFile = selected && file?.path === selected ? file : undefined;
 
   return (
     <div className="flex h-full min-h-0">
       <aside className="w-64 shrink-0 overflow-y-auto border-r bg-surface px-1.5 py-2">
         <p className="px-2 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{projectName}</p>
-        {!currentTree ? (
+        {!root || (root.status === "loading" && !root.entries) ? (
           <div className="space-y-2 px-2 py-1" role="status">
             <span className="sr-only">Loading files…</span>
             {[60, 80, 50, 70].map((w) => (
               <Skeleton key={w} className="h-4" style={{ width: `${w}%` }} />
             ))}
           </div>
-        ) : currentTree.kind === "error" ? (
+        ) : root.status === "error" && !root.entries ? (
           <EmptyState
             icon={FolderX}
             tone="danger"
             title="Could not load files"
-            description={currentTree.message}
+            description={root.error}
             className="px-3 py-6"
             action={
-              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              <Button variant="outline" size="sm" onClick={() => void loadDir(projectId, ROOT_DIR)}>
                 Retry
               </Button>
             }
           />
+        ) : root.entries?.length === 0 ? (
+          <EmptyState icon={FolderOpen} title="No files" description="This folder is empty." className="px-3 py-6" />
         ) : (
           <FileTree
-            nodes={nodes}
+            entries={root.entries ?? []}
+            dirs={dirs}
+            expanded={expanded}
             selected={selected}
             onSelect={(path) => setSelectedFile(projectId, path)}
-            expanded={expanded}
-            onExpandedChange={(dirs) => setExpandedDirs(projectId, dirs)}
+            onToggle={onToggle}
+            onRetry={(path) => void loadDir(projectId, path)}
             label={`${projectName} files`}
           />
         )}
@@ -134,10 +130,31 @@ export function FilesView({
                   tone="danger"
                   title="Could not open file"
                   description={currentFile.message}
+                  action={
+                    <Button variant="outline" size="sm" onClick={() => setFileAttempt((n) => n + 1)}>
+                      Retry
+                    </Button>
+                  }
+                />
+              </div>
+            ) : currentFile.file.binary ? (
+              <div className="p-8">
+                <EmptyState
+                  icon={FileQuestion}
+                  title="Binary file"
+                  description="This file is not text, so it cannot be previewed."
                 />
               </div>
             ) : (
-              <CodeView content={currentFile.content} />
+              <>
+                {currentFile.file.truncated ? (
+                  <p className="flex shrink-0 items-center gap-2 border-b bg-warning/10 px-4 py-1.5 text-xs">
+                    <Scissors className="size-3.5 shrink-0" aria-hidden="true" />
+                    Large file — only the first 1 MB is shown.
+                  </p>
+                ) : null}
+                <CodeView content={currentFile.file.content} />
+              </>
             )}
           </>
         )}
@@ -146,21 +163,26 @@ export function FilesView({
   );
 }
 
+/** Text with a line-number gutter. Two text nodes, so even 1 MB files render quickly. */
 function CodeView({ content }: { content: string }) {
-  const lines = content.replace(/\n$/, "").split("\n");
+  const lineCount = useMemo(() => content.replace(/\n$/, "").split("\n").length, [content]);
+  const gutter = useMemo(() => Array.from({ length: lineCount }, (_, i) => i + 1).join("\n"), [lineCount]);
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-surface">
-      <pre className="py-3 font-mono text-[13px] leading-6">
-        <code>
-          {lines.map((line, i) => (
-            <div key={i} className="flex hover:bg-muted/60">
-              <span className="w-12 shrink-0 pr-4 text-right text-muted-foreground select-none" aria-hidden="true">
-                {i + 1}
-              </span>
-              <span className="pr-6 whitespace-pre">{line || " "}</span>
-            </div>
-          ))}
-        </code>
+    // Focusable scroll region so the preview can be scrolled with the keyboard.
+    <div
+      role="region"
+      aria-label="File content"
+      tabIndex={0}
+      className="flex min-h-0 flex-1 overflow-auto bg-surface font-mono text-[13px] leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    >
+      <pre
+        className="sticky left-0 shrink-0 bg-surface py-3 pr-4 pl-3 text-right text-muted-foreground select-none"
+        aria-hidden="true"
+      >
+        {gutter}
+      </pre>
+      <pre className="py-3 pr-6">
+        <code>{content.replace(/\n$/, "")}</code>
       </pre>
     </div>
   );

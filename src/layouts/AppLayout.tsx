@@ -1,12 +1,14 @@
 import { useEffect, useRef, type CSSProperties } from "react";
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { TopBar } from "@/components/layout/TopBar";
-import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { AppSidebar } from "@/components/sidebar/AppSidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { useAuthStore } from "@/stores/authStore";
+import { isRecord } from "@/lib/guards";
+import { useProjectStore } from "@/stores/projectStore";
+import { useSettingsStore } from "@/stores/settingsStore";
+import { useUiStore } from "@/stores/uiStore";
 
 const layoutVars = {
   "--topbar-h": "2.75rem",
@@ -19,25 +21,49 @@ function focusMain() {
   document.getElementById(MAIN_ID)?.focus({ preventScroll: true });
 }
 
-/** Moves focus to the main region when the route (path) changes — not on first load, not for ?query changes. */
+/**
+ * Moves focus to the main region when the route (path) changes — not on first load, not for ?query
+ * changes, and not when the navigation asks to keep focus (a new chat continuing under its real route).
+ */
 function useFocusMainOnNavigation() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
+  const state: unknown = location.state;
   const previous = useRef(pathname);
+  const keepFocus = isRecord(state) && state.keepFocus === true;
 
   useEffect(() => {
     if (previous.current === pathname) return;
     previous.current = pathname;
-    focusMain();
-  }, [pathname]);
+    if (!keepFocus) focusMain();
+  }, [pathname, keepFocus]);
+}
+
+/** Loads the project list once and applies "Open last project on startup" after the first load. */
+function useStartup() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const loaded = useProjectStore((s) => s.loaded);
+  const status = useProjectStore((s) => s.status);
+  const load = useProjectStore((s) => s.load);
+
+  useEffect(() => {
+    if (!loaded && status === "idle") void load();
+  }, [loaded, status, load]);
+
+  useEffect(() => {
+    if (!loaded || useUiStore.getState().startupHandled) return;
+    useUiStore.getState().markStartupHandled();
+    const latest = useProjectStore.getState().projects[0];
+    if (pathname === "/" && latest && useSettingsStore.getState().openLastProjectOnStartup) {
+      void navigate(`/projects/${latest.id}`, { replace: true });
+    }
+  }, [loaded, pathname, navigate]);
 }
 
 export function AppLayout() {
-  const refreshAuth = useAuthStore((s) => s.refresh);
   useFocusMainOnNavigation();
-
-  useEffect(() => {
-    void refreshAuth();
-  }, [refreshAuth]);
+  useStartup();
 
   return (
     <SidebarProvider style={layoutVars} className="h-svh min-h-0 flex-col overflow-hidden">
@@ -57,7 +83,6 @@ export function AppLayout() {
         </SidebarInset>
       </div>
       <StatusBar />
-      <NewProjectDialog />
       <CommandPalette />
     </SidebarProvider>
   );

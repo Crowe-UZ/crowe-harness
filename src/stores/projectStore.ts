@@ -1,76 +1,60 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
-import { createMockProjects } from "@/data/mock";
-import type { Project, ProjectLanguage } from "@/data/types";
-import { isProject } from "@/data/validate";
-import { filterValid, isRecord } from "@/lib/guards";
-import { createId } from "@/lib/id";
+import type { Project } from "@/data/types";
+import { services } from "@/features/ai/services";
+import { errorMessage } from "@/lib/errors";
 
-export interface NewProjectInput {
-  name: string;
-  path: string;
-  language: ProjectLanguage;
-}
+export type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface ProjectState {
+  /** Sorted by last activity, newest first (as returned by the history service). */
   projects: Project[];
-  addProject: (input: NewProjectInput) => Project;
-  touchProject: (id: string) => void;
-  reset: () => void;
+  status: LoadStatus;
+  /** True once the list was loaded successfully at least once. */
+  loaded: boolean;
+  error: string | undefined;
+  load: () => Promise<void>;
+  /** Native folder picker; adds the folder to the list. Returns null when cancelled. Throws on failure. */
+  openFolder: () => Promise<Project | null>;
 }
 
-type PersistedProjects = Pick<ProjectState, "projects">;
+let latestLoad = 0;
 
-/** Valid fields of a persisted snapshot; malformed projects are dropped. */
-function parsePersisted(value: unknown): Partial<PersistedProjects> {
-  if (!isRecord(value)) return {};
-  const projects = filterValid(value.projects, isProject);
-  return projects ? { projects } : {};
+/**
+ * Non-persisted cache of the projects known to Claude Code (history) and the
+ * folders opened in Crowe Harness. The source of truth lives in Rust.
+ */
+export const useProjectStore = create<ProjectState>()((set, get) => ({
+  projects: [],
+  status: "idle",
+  loaded: false,
+  error: undefined,
+
+  load: async () => {
+    const request = ++latestLoad;
+    set({ status: "loading", error: undefined });
+    try {
+      const projects = await services.history.listProjects();
+      if (request === latestLoad) set({ projects, status: "ready", loaded: true });
+    } catch (error) {
+      if (request === latestLoad) set({ status: "error", error: errorMessage(error) });
+    }
+  },
+
+  openFolder: async () => {
+    const project = await services.history.openFolder();
+    if (!project) return null;
+    set((state) => ({ projects: [project, ...state.projects.filter((p) => p.id !== project.id)] }));
+    void get().load();
+    return project;
+  },
+}));
+
+/** Ensures the project list is loaded (no-op when already loaded or loading). */
+export function ensureProjectsLoaded(): void {
+  const { status, loaded, load } = useProjectStore.getState();
+  if (!loaded && status !== "loading" && status !== "error") void load();
 }
 
-export const useProjectStore = create<ProjectState>()(
-  persist(
-    (set) => ({
-      projects: createMockProjects(),
-      addProject: (input) => {
-        const project: Project = {
-          id: createId("project"),
-          name: input.name.trim(),
-          path: input.path.trim(),
-          language: input.language,
-          branch: "main",
-          lastOpened: new Date().toISOString(),
-        };
-        set((state) => ({ projects: [project, ...state.projects] }));
-        return project;
-      },
-      touchProject: (id) =>
-        set((state) =>
-          state.projects.some((p) => p.id === id)
-            ? {
-                projects: state.projects.map((p) => (p.id === id ? { ...p, lastOpened: new Date().toISOString() } : p)),
-              }
-            : state,
-        ),
-      reset: () => set({ projects: createMockProjects() }),
-    }),
-    {
-      name: "crowe-harness.projects",
-      version: 1,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state): Partial<PersistedProjects> => ({ projects: state.projects }),
-      // v1 is the only shape so far: identity, minus malformed records.
-      migrate: (persisted) => parsePersisted(persisted),
-      merge: (persisted, current) => ({ ...current, ...parsePersisted(persisted) }),
-    },
-  ),
-);
-
-export function sortByLastOpened(projects: Project[]): Project[] {
-  return [...projects].sort((a, b) => b.lastOpened.localeCompare(a.lastOpened));
-}
-
-/** Most recently opened project, if any. */
-export function mostRecentProject(projects: Project[]): Project | undefined {
-  return sortByLastOpened(projects)[0];
+export function findProject(projects: Project[], id: string | undefined): Project | undefined {
+  return id === undefined ? undefined : projects.find((p) => p.id === id);
 }

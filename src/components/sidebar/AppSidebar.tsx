@@ -1,7 +1,17 @@
-import { Bot, FolderGit2, Home, MessageSquare, Plus, Plug, Settings, Sparkles } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  Bot,
+  FolderGit2,
+  FolderOpen,
+  FolderTree,
+  Home,
+  MessageSquare,
+  Plug,
+  Plus,
+  Settings,
+  Sparkles,
+} from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Link, useMatch } from "react-router";
-import { useShallow } from "zustand/shallow";
 import {
   Sidebar,
   SidebarContent,
@@ -13,14 +23,20 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRouteContext } from "@/hooks/use-route-context";
-import { useStartSession } from "@/hooks/use-start-session";
-import { sortByLastOpened, useProjectStore } from "@/stores/projectStore";
-import { sessionsForProject, useSessionStore } from "@/stores/sessionStore";
-import { useUiStore } from "@/stores/uiStore";
+import { subagentLabel, useRouteContext } from "@/hooks/use-route-context";
+import { useOpenFolder } from "@/hooks/use-open-folder";
+import { useProjectStore } from "@/stores/projectStore";
+import { selectSessions, transcriptKey, useSessionStore } from "@/stores/sessionStore";
+
+const TOP_PROJECTS = 8;
+const CHATS_STEP = 15;
 
 const TOOLS = [
   { to: "/agents", label: "Agents", icon: Bot },
@@ -29,13 +45,10 @@ const TOOLS = [
 ] as const;
 
 export function AppSidebar() {
-  const { projectId, sessionId } = useRouteContext();
-  const projects = useProjectStore(useShallow((s) => sortByLastOpened(s.projects)));
-  const activeProjectId = projectId ?? projects[0]?.id;
-  const sessions = useSessionStore(useShallow((s) => sessionsForProject(s.sessions, activeProjectId).slice(0, 8)));
-  const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
-  const activeProject = projects.find((p) => p.id === activeProjectId);
-  const startSession = useStartSession(activeProject?.id);
+  const { projectId, sessionId, agentId, isNewChat, project } = useRouteContext();
+  const projects = useProjectStore((s) => s.projects);
+  const projectsLoaded = useProjectStore((s) => s.loaded);
+  const { openFolder, opening } = useOpenFolder();
 
   return (
     <Sidebar
@@ -50,9 +63,13 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="New project" onClick={() => setNewProjectOpen(true)}>
-                  <Plus />
-                  <span>New project</span>
+                <SidebarMenuButton
+                  tooltip="Open folder"
+                  aria-disabled={opening || undefined}
+                  onClick={() => void openFolder()}
+                >
+                  <FolderOpen />
+                  <span>Open folder</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
@@ -68,68 +85,45 @@ export function AppSidebar() {
           <SidebarGroupLabel>Projects</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {projects.slice(0, 6).map((project) => {
-                const isActive = project.id === projectId && !sessionId;
+              {!projectsLoaded && projects.length === 0 ? (
+                <SidebarMenuItem>
+                  <SidebarMenuSkeleton showIcon />
+                </SidebarMenuItem>
+              ) : null}
+              {projects.slice(0, TOP_PROJECTS).map((p) => {
+                const isCurrent = p.id === projectId && !sessionId && !isNewChat;
                 return (
-                  <SidebarMenuItem key={project.id}>
-                    <SidebarMenuButton asChild tooltip={project.name} isActive={isActive}>
-                      <Link to={`/projects/${project.id}`} aria-current={isActive ? "page" : undefined}>
+                  <SidebarMenuItem key={p.id}>
+                    <SidebarMenuButton asChild tooltip={p.name} isActive={p.id === projectId}>
+                      <Link to={`/projects/${p.id}`} aria-current={isCurrent ? "page" : undefined}>
                         <FolderGit2 />
-                        <span>{project.name}</span>
+                        <span>{p.name}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
-              {projects.length > 6 ? (
-                <SidebarMenuItem>
-                  <NavMenuButton to="/projects" label="All projects" end>
-                    <FolderGit2 />
-                  </NavMenuButton>
-                </SidebarMenuItem>
-              ) : null}
+              <SidebarMenuItem>
+                <NavMenuButton to="/projects" label="All projects" end>
+                  <FolderTree />
+                </NavMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {activeProject ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Sessions · {activeProject.name.replace(/^Project /, "")}</SidebarGroupLabel>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarGroupAction aria-label="New session" onClick={startSession}>
-                  <Plus />
-                </SidebarGroupAction>
-              </TooltipTrigger>
-              <TooltipContent side="right">New session</TooltipContent>
-            </Tooltip>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {sessions.length === 0 ? (
-                  <li className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                    No sessions yet
-                  </li>
-                ) : null}
-                {sessions.map((session) => (
-                  <SidebarMenuItem key={session.id}>
-                    <SidebarMenuButton asChild tooltip={session.title} isActive={session.id === sessionId}>
-                      <Link
-                        to={`/projects/${session.projectId}/sessions/${session.id}`}
-                        aria-current={session.id === sessionId ? "page" : undefined}
-                      >
-                        <MessageSquare />
-                        <span>{session.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+        {project ? (
+          <ChatsGroup
+            projectId={project.id}
+            projectName={project.name}
+            sessionId={sessionId}
+            agentId={agentId}
+            isNewChat={isNewChat}
+          />
         ) : null}
 
         <SidebarGroup>
-          <SidebarGroupLabel>Tools</SidebarGroupLabel>
+          <SidebarGroupLabel>Claude Code</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {TOOLS.map(({ to, label, icon: Icon }) => (
@@ -155,6 +149,120 @@ export function AppSidebar() {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/** Chats of the current project, with the agent chats of the open chat nested under it. */
+function ChatsGroup({
+  projectId,
+  projectName,
+  sessionId,
+  agentId,
+  isNewChat,
+}: {
+  projectId: string;
+  projectName: string;
+  sessionId: string | undefined;
+  agentId: string | undefined;
+  isNewChat: boolean;
+}) {
+  const sessions = useSessionStore(selectSessions(projectId));
+  const listStatus = useSessionStore((s) => s.lists[projectId]?.status);
+  const subagents = useSessionStore((s) =>
+    sessionId ? s.transcripts[transcriptKey(projectId, sessionId)]?.data?.subagents : undefined,
+  );
+  const [limit, setLimit] = useState(CHATS_STEP);
+  const newChatPath = `/projects/${projectId}/sessions/new`;
+
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>Chats · {projectName}</SidebarGroupLabel>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <SidebarGroupAction asChild>
+            <Link to={newChatPath} aria-label="New chat">
+              <Plus />
+            </Link>
+          </SidebarGroupAction>
+        </TooltipTrigger>
+        <TooltipContent side="right">New chat</TooltipContent>
+      </Tooltip>
+      <SidebarGroupContent>
+        <SidebarMenu aria-label={`Chats in ${projectName}`}>
+          {isNewChat ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="New chat" isActive>
+                <Link to={newChatPath} aria-current="page">
+                  <Plus />
+                  <span>New chat</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
+          {listStatus === "loading" && sessions.length === 0 ? (
+            <SidebarMenuItem>
+              <SidebarMenuSkeleton showIcon />
+            </SidebarMenuItem>
+          ) : null}
+          {listStatus === "ready" && sessions.length === 0 && !isNewChat ? (
+            <li className="px-2 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+              No chats yet
+            </li>
+          ) : null}
+          {listStatus === "error" && sessions.length === 0 ? (
+            <li className="px-2 py-1 text-xs text-destructive group-data-[collapsible=icon]:hidden">
+              Could not load chats
+            </li>
+          ) : null}
+          {sessions.slice(0, limit).map((session) => {
+            const isActive = session.id === sessionId;
+            return (
+              <SidebarMenuItem key={session.id}>
+                <SidebarMenuButton asChild tooltip={session.title} isActive={isActive}>
+                  <Link
+                    to={`/projects/${projectId}/sessions/${session.id}`}
+                    aria-current={isActive && !agentId ? "page" : undefined}
+                  >
+                    <MessageSquare />
+                    <span>{session.title}</span>
+                  </Link>
+                </SidebarMenuButton>
+                {isActive && subagents && subagents.length > 0 ? (
+                  <SidebarMenuSub aria-label="Agent chats">
+                    {subagents.map((agent) => (
+                      <SidebarMenuSubItem key={agent.id}>
+                        <SidebarMenuSubButton asChild isActive={agent.id === agentId}>
+                          <Link
+                            to={`/projects/${projectId}/sessions/${session.id}/agents/${agent.id}`}
+                            aria-current={agent.id === agentId ? "page" : undefined}
+                            title={agent.description ?? undefined}
+                          >
+                            <Bot />
+                            <span>{subagentLabel(agent)}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
+                  </SidebarMenuSub>
+                ) : null}
+              </SidebarMenuItem>
+            );
+          })}
+          {sessions.length > limit ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="text-muted-foreground"
+                onClick={() => setLimit((n) => n + CHATS_STEP)}
+                tooltip="Show more chats"
+              >
+                <MessageSquare />
+                <span>Show more ({sessions.length - limit})</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }
 

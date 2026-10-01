@@ -1,305 +1,271 @@
 import { create } from "zustand";
-import { createMockConversation } from "@/data/mock";
-import type { ChatMessage, MessageStatus } from "@/data/types";
 import { services } from "@/features/ai/services";
-import type { AIEvent, AIProvider, PermissionDecision } from "@/features/ai/types";
+import type { PermissionDecision, PermissionMode, TurnHandle, Usage } from "@/features/ai/types";
+import { applyEvent, settleTurn, type MessageView } from "@/features/chat/view-model";
 import { errorMessage } from "@/lib/errors";
 import { createId } from "@/lib/id";
 import { useProjectStore } from "./projectStore";
-import { useSessionStore } from "./sessionStore";
-import { useSettingsStore } from "./settingsStore";
+import { transcriptKey, useSessionStore } from "./sessionStore";
 
 export type ChatStatus = "idle" | "running" | "awaiting_permission" | "error";
 
 export interface PendingPermission {
   id: string;
   tool: string;
-  input: unknown;
+  input: string;
+}
+
+export type ChatNotice = { id: string; kind: "permission_denied"; toolName: string } | { id: string; kind: "stopped" };
+
+/** Live state of one chat. Keyed by session id, or by `draftKey(projectId)` before the session exists. */
+export interface LiveChat {
+  projectId: string;
+  /** Claude Code session id once known (`session_started`). */
+  sessionId: string | null;
+  status: ChatStatus;
+  /** Optimistic user message + streamed reply. Cleared once the stored transcript has been reloaded. */
+  messages: MessageView[];
+  error?: string;
+  notices: ChatNotice[];
+  pendingPermission?: PendingPermission;
+  /** Usage reported for the last turn. */
+  usage?: Usage;
+  model?: string;
 }
 
 interface ChatState {
-  conversations: Record<string, ChatMessage[]>;
-  status: Record<string, ChatStatus>;
-  errors: Record<string, string | undefined>;
-  pendingPermission: Record<string, PendingPermission | undefined>;
-  /** `provider` is injectable for tests; the app uses `services.ai`. */
-  send: (sessionId: string, text: string, provider?: AIProvider) => Promise<void>;
-  stop: (sessionId: string) => Promise<void>;
-  respondToPermission: (sessionId: string, decision: PermissionDecision) => Promise<void>;
+  chats: Record<string, LiveChat | undefined>;
+  /** Chat key → session id the chat now lives under (a new chat got its id, or a resume forked). */
+  redirects: Record<string, string | undefined>;
+  /** Permission mode chosen in the composer, per chat key. */
+  modes: Record<string, PermissionMode | undefined>;
+  send: (
+    key: string,
+    target: { projectId: string; sessionId: string | null },
+    text: string,
+    mode: PermissionMode,
+  ) => Promise<void>;
+  stop: (key: string) => Promise<void>;
+  respondToPermission: (key: string, decision: PermissionDecision) => Promise<void>;
+  dismissNotice: (key: string, noticeId: string) => void;
+  consumeRedirect: (key: string) => void;
+  setMode: (key: string, mode: PermissionMode) => void;
+  /** Cancels running turns and forgets all live state. */
   reset: () => void;
 }
 
-/** A send() in flight. Only the turn registered for a session may mutate that session's state. */
-interface Turn {
-  generation: number;
-  provider: AIProvider;
-  runtimeId?: string;
-  stopRequested: boolean;
-}
-
-/** Runtime sessions started during this app run, so later turns reuse them instead of resuming again. */
-interface LiveRuntime {
-  provider: AIProvider;
-  runtimeId: string;
-}
+export const draftKey = (projectId: string) => `draft:${projectId}`;
 
 export function isBusy(status: ChatStatus | undefined): boolean {
   return status === "running" || status === "awaiting_permission";
 }
 
-const initialConversations = (): Record<string, ChatMessage[]> => ({ "fix-auth": createMockConversation() });
+/** A turn in flight. Only the turn registered for a chat key may mutate that chat. */
+interface Turn {
+  generation: number;
+  key: string;
+  handle?: TurnHandle;
+  stopRequested: boolean;
+}
 
 export const useChatStore = create<ChatState>()((set, get) => {
   const turns = new Map<string, Turn>();
-  const runtimes = new Map<string, LiveRuntime>();
   let generation = 0;
 
-  const update = (sessionId: string, fn: (messages: ChatMessage[]) => ChatMessage[]) =>
-    set((state) => ({
-      conversations: { ...state.conversations, [sessionId]: fn(state.conversations[sessionId] ?? []) },
-    }));
+  const patchChat = (key: string, fn: (chat: LiveChat) => LiveChat) =>
+    set((state) => {
+      const chat = state.chats[key];
+      return chat ? { chats: { ...state.chats, [key]: fn(chat) } } : state;
+    });
 
-  const patchSession = (
-    sessionId: string,
-    patch: { status?: ChatStatus; error?: string | null; pending?: PendingPermission | null },
-  ) =>
-    set((state) => ({
-      status: patch.status ? { ...state.status, [sessionId]: patch.status } : state.status,
-      errors: patch.error !== undefined ? { ...state.errors, [sessionId]: patch.error ?? undefined } : state.errors,
-      pendingPermission:
-        patch.pending !== undefined
-          ? { ...state.pendingPermission, [sessionId]: patch.pending ?? undefined }
-          : state.pendingPermission,
-    }));
+  /** Moves a chat (and its turn and mode) to a new key; leaves a redirect behind. */
+  const moveChat = (from: string, to: string) => {
+    if (from === to) return;
+    const turn = turns.get(from);
+    if (turn) {
+      turns.delete(from);
+      turn.key = to;
+      turns.set(to, turn);
+    }
+    set((state) => {
+      const { [from]: chat, ...chats } = state.chats;
+      const { [from]: mode, ...modes } = state.modes;
+      return {
+        chats: chat ? { ...chats, [to]: chat } : chats,
+        modes: mode ? { ...modes, [to]: mode } : modes,
+        redirects: { ...state.redirects, [from]: to },
+      };
+    });
+  };
 
-  const fail = (sessionId: string, message: string) => patchSession(sessionId, { status: "error", error: message });
+  /** After a turn: refresh lists, reload the transcript, then drop the live copy of the messages. */
+  const syncHistory = async (key: string, projectId: string, sessionId: string) => {
+    const sessions = useSessionStore.getState();
+    await Promise.all([
+      sessions.loadSessions(projectId),
+      useProjectStore.getState().load(),
+      sessions.loadTranscript(projectId, sessionId),
+    ]);
+    if (turns.has(key)) return; // a new turn started meanwhile
+    const transcript = useSessionStore.getState().transcripts[transcriptKey(projectId, sessionId)];
+    if (transcript?.status === "ready") patchChat(key, (chat) => ({ ...chat, messages: [] }));
+  };
 
   return {
-    conversations: initialConversations(),
-    status: {},
-    errors: {},
-    pendingPermission: {},
+    chats: {},
+    redirects: {},
+    modes: {},
 
-    send: async (sessionId, text, provider = services.ai) => {
-      const trimmed = text.trim();
-      if (!trimmed || isBusy(get().status[sessionId])) return;
-
-      const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
-      const project = session && useProjectStore.getState().projects.find((p) => p.id === session.projectId);
-      if (!session || !project) {
-        fail(sessionId, session ? "The project of this session no longer exists." : "This session no longer exists.");
-        return;
-      }
+    send: async (key, target, text, mode) => {
+      const prompt = text.trim();
+      if (!prompt || isBusy(get().chats[key]?.status)) return;
 
       generation += 1;
-      const turn: Turn = { generation, provider, stopRequested: false };
-      turns.set(sessionId, turn);
-      const isCurrent = () => turns.get(sessionId)?.generation === turn.generation;
+      const turn: Turn = { generation, key, stopRequested: false };
+      turns.set(key, turn);
+      const isCurrent = () => turns.get(turn.key) === turn;
 
-      const userMessage: ChatMessage = {
+      const userMessage: MessageView = {
         id: createId("user"),
         role: "user",
-        text: trimmed,
-        createdAt: new Date().toISOString(),
+        blocks: [{ kind: "text", id: createId("text"), text: prompt }],
+        timestamp: new Date().toISOString(),
         status: "done",
       };
-      update(sessionId, (messages) => [...messages, userMessage]);
-      patchSession(sessionId, { status: "running", error: null, pending: null });
-
-      const bindRuntime = (runtimeId: string) => {
-        turn.runtimeId = runtimeId;
-        runtimes.set(sessionId, { provider, runtimeId });
-        useSessionStore.getState().setRuntimeSessionId(sessionId, runtimeId);
-      };
+      set((state) => {
+        const previous = state.chats[key];
+        return {
+          chats: {
+            ...state.chats,
+            [key]: {
+              projectId: target.projectId,
+              sessionId: target.sessionId ?? previous?.sessionId ?? null,
+              status: "running",
+              messages: [...(previous?.messages ?? []), userMessage],
+              notices: [],
+              usage: previous?.usage,
+              model: previous?.model,
+            },
+          },
+        };
+      });
 
       let failure: string | undefined;
       try {
-        const live = runtimes.get(sessionId);
-        if (live?.provider === provider) {
-          turn.runtimeId = live.runtimeId;
-        } else {
-          const runtimeId = await provider.startSession({
-            projectPath: project.path,
-            permissionMode: useSettingsStore.getState().defaultPermissionMode,
-            resumeSessionId: session.runtimeSessionId,
-          });
-          if (!isCurrent()) {
-            void provider.stopSession(runtimeId).catch(() => undefined);
-            return;
-          }
-          bindRuntime(runtimeId);
-        }
-        if (turn.stopRequested || !turn.runtimeId) return;
+        const handle = services.ai.startTurn({
+          projectId: target.projectId,
+          sessionId: get().chats[key]?.sessionId ?? null,
+          prompt,
+          permissionMode: mode,
+        });
+        turn.handle = handle;
+        if (turn.stopRequested) void handle.cancel().catch(() => undefined);
 
-        for await (const event of provider.sendMessage(turn.runtimeId, trimmed)) {
-          // Orphaned stream (reset() or a newer send): stop consuming, never touch state.
-          if (!isCurrent()) break;
+        for await (const event of handle.events) {
+          if (!isCurrent()) break; // orphaned by reset(): stop consuming, never touch state
           switch (event.type) {
             case "session_started":
-              bindRuntime(event.sessionId);
+              if (event.sessionId !== turn.key) {
+                moveChat(turn.key, event.sessionId);
+                // A new chat: show it in the chat list as soon as Claude Code has created it.
+                void useSessionStore.getState().loadSessions(target.projectId);
+              }
+              patchChat(turn.key, (chat) => ({
+                ...chat,
+                sessionId: event.sessionId,
+                model: event.model ?? chat.model,
+              }));
               break;
             case "permission_request":
-              patchSession(sessionId, {
+              patchChat(turn.key, (chat) => ({
+                ...chat,
                 status: "awaiting_permission",
-                pending: { id: event.id, tool: event.tool, input: event.input },
-              });
+                pendingPermission: { id: event.id, tool: event.tool, input: event.input },
+              }));
+              break;
+            case "permission_denied":
+              patchChat(turn.key, (chat) => ({
+                ...chat,
+                notices: [
+                  ...chat.notices,
+                  { id: createId("notice"), kind: "permission_denied", toolName: event.toolName },
+                ],
+              }));
+              break;
+            case "message_end":
+              if (event.usage) patchChat(turn.key, (chat) => ({ ...chat, usage: event.usage }));
               break;
             case "error":
               failure = event.message;
-              patchSession(sessionId, { error: event.message });
+              patchChat(turn.key, (chat) => ({ ...chat, error: event.message }));
               break;
             default:
               break;
           }
-          update(sessionId, (messages) => applyEvent(messages, event));
+          patchChat(turn.key, (chat) => ({ ...chat, messages: applyEvent(chat.messages, event) }));
         }
       } catch (error) {
         failure = errorMessage(error);
-      } finally {
-        if (isCurrent()) {
-          turns.delete(sessionId);
-          const leftover: MessageStatus = failure === undefined ? "interrupted" : "error";
-          update(sessionId, (messages) => finalizeTurn(messages, userMessage.id, leftover));
-          if (failure === undefined) patchSession(sessionId, { status: "idle", pending: null });
-          else patchSession(sessionId, { status: "error", error: failure, pending: null });
-        }
       }
+
+      if (!isCurrent()) return;
+      turns.delete(turn.key);
+      const stopped = turn.stopRequested && failure === undefined;
+      patchChat(turn.key, (chat) => ({
+        ...chat,
+        status: failure === undefined ? "idle" : "error",
+        error: failure ?? chat.error,
+        pendingPermission: undefined,
+        messages: settleTurn(chat.messages, failure === undefined ? "interrupted" : "error"),
+        notices: stopped ? [...chat.notices, { id: createId("notice"), kind: "stopped" }] : chat.notices,
+      }));
+
+      const chat = get().chats[turn.key];
+      if (chat?.sessionId) await syncHistory(turn.key, chat.projectId, chat.sessionId);
     },
 
-    stop: async (sessionId) => {
-      const turn = turns.get(sessionId);
+    stop: async (key) => {
+      const turn = turns.get(key);
       if (!turn) return;
       turn.stopRequested = true;
-      if (!turn.runtimeId) return;
+      if (!turn.handle) return;
       try {
-        await turn.provider.interrupt(turn.runtimeId);
+        await turn.handle.cancel();
       } catch (error) {
-        if (turns.get(sessionId) === turn) patchSession(sessionId, { error: errorMessage(error) });
+        if (turns.get(turn.key) === turn) patchChat(turn.key, (chat) => ({ ...chat, error: errorMessage(error) }));
       }
     },
 
-    respondToPermission: async (sessionId, decision) => {
-      const pending = get().pendingPermission[sessionId];
-      const turn = turns.get(sessionId);
-      if (!pending || !turn) return;
-      patchSession(sessionId, { status: "running", pending: null });
+    respondToPermission: async (key, decision) => {
+      const chat = get().chats[key];
+      const pending = chat?.pendingPermission;
+      const turn = turns.get(key);
+      const respond = services.ai.respondToPermission?.bind(services.ai);
+      if (!pending || !turn || !respond) return;
+      patchChat(key, (c) => ({ ...c, status: "running", pendingPermission: undefined }));
       try {
-        await turn.provider.respondToPermission(pending.id, decision);
+        await respond(pending.id, decision);
       } catch (error) {
-        if (turns.get(sessionId) === turn) patchSession(sessionId, { error: errorMessage(error) });
+        if (turns.get(turn.key) === turn) patchChat(turn.key, (c) => ({ ...c, error: errorMessage(error) }));
       }
     },
+
+    dismissNotice: (key, noticeId) =>
+      patchChat(key, (chat) => ({ ...chat, notices: chat.notices.filter((n) => n.id !== noticeId) })),
+
+    consumeRedirect: (key) =>
+      set((state) => {
+        if (!(key in state.redirects)) return state;
+        const { [key]: _removed, ...redirects } = state.redirects;
+        return { redirects };
+      }),
+
+    setMode: (key, mode) => set((state) => ({ modes: { ...state.modes, [key]: mode } })),
 
     reset: () => {
-      for (const turn of turns.values()) {
-        if (turn.runtimeId) void turn.provider.interrupt(turn.runtimeId).catch(() => undefined);
-      }
-      for (const live of runtimes.values()) {
-        void live.provider.stopSession(live.runtimeId).catch(() => undefined);
-      }
+      for (const turn of turns.values()) void turn.handle?.cancel().catch(() => undefined);
       turns.clear();
-      runtimes.clear();
-      set({ conversations: initialConversations(), status: {}, errors: {}, pendingPermission: {} });
+      set({ chats: {}, redirects: {}, modes: {} });
     },
   };
 });
-
-/** Pure reducer from runtime events to chat messages (unit-tested). */
-export function applyEvent(messages: ChatMessage[], event: AIEvent): ChatMessage[] {
-  switch (event.type) {
-    case "message_start":
-      if (messages.some((m) => m.id === event.messageId)) return messages;
-      return [
-        ...messages,
-        {
-          id: event.messageId,
-          role: "assistant",
-          text: "",
-          createdAt: new Date().toISOString(),
-          status: "streaming",
-          activity: [],
-        },
-      ];
-    case "text_delta":
-      return mapTurnMessage(messages, event.messageId, (m) => ({ ...m, text: m.text + event.text }));
-    case "tool_call_start":
-      return mapTurnMessage(messages, event.messageId, (m) => ({
-        ...m,
-        activity: [
-          ...(m.activity ?? []),
-          { id: event.id, label: describeTool(event.name, event.input), tool: event.name, status: "running" },
-        ],
-      }));
-    case "tool_call_end":
-      return mapTurnMessage(messages, event.messageId ?? findToolMessageId(messages, event.id), (m) => ({
-        ...m,
-        activity: (m.activity ?? []).map((a) =>
-          a.id === event.id ? { ...a, status: event.status === "success" ? "done" : "error" } : a,
-        ),
-      }));
-    case "message_end":
-      return mapTurnMessage(messages, event.messageId, (m) => ({
-        ...settle(m, event.stopReason === "interrupted" ? "interrupted" : "done"),
-        usage: event.usage ?? m.usage,
-      }));
-    case "error":
-      return settleStreaming(messages, currentTurnStart(messages), "error");
-    case "session_started":
-    case "permission_request":
-      return messages;
-  }
-}
-
-/**
- * Settles every assistant message of the turn started by `userMessageId` that
- * is still streaming (the stream ended without message_end, or threw).
- */
-export function finalizeTurn(messages: ChatMessage[], userMessageId: string, status: MessageStatus): ChatMessage[] {
-  const index = messages.findIndex((m) => m.id === userMessageId);
-  return index === -1 ? messages : settleStreaming(messages, index + 1, status);
-}
-
-function settle(message: ChatMessage, status: MessageStatus): ChatMessage {
-  return {
-    ...message,
-    status,
-    activity: message.activity?.map((a) => (a.status === "running" ? { ...a, status: "pending" } : a)),
-  };
-}
-
-function settleStreaming(messages: ChatMessage[], from: number, status: MessageStatus): ChatMessage[] {
-  if (!messages.some((m, i) => i >= from && m.status === "streaming")) return messages;
-  return messages.map((m, i) => (i >= from && m.status === "streaming" ? settle(m, status) : m));
-}
-
-function describeTool(name: string, input: unknown): string {
-  if (input && typeof input === "object" && "description" in input && typeof input.description === "string") {
-    return input.description;
-  }
-  return name;
-}
-
-/** The current turn is everything after the last user message. */
-function currentTurnStart(messages: ChatMessage[]): number {
-  return messages.findLastIndex((m) => m.role === "user") + 1;
-}
-
-function findToolMessageId(messages: ChatMessage[], toolId: string): string | undefined {
-  const start = currentTurnStart(messages);
-  return messages.findLast((m, i) => i >= start && m.activity?.some((a) => a.id === toolId))?.id;
-}
-
-/** Maps the message with `messageId`; falls back to the last assistant message of the current turn. */
-function mapTurnMessage(
-  messages: ChatMessage[],
-  messageId: string | undefined,
-  fn: (m: ChatMessage) => ChatMessage,
-): ChatMessage[] {
-  let index = messageId === undefined ? -1 : messages.findIndex((m) => m.id === messageId);
-  if (index === -1) {
-    const start = currentTurnStart(messages);
-    index = messages.findLastIndex((m, i) => i >= start && m.role === "assistant");
-  }
-  if (index === -1) return messages;
-  return messages.map((m, i) => (i === index ? fn(m) : m));
-}

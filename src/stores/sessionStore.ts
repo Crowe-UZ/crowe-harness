@@ -1,79 +1,96 @@
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
-import { createMockSessions } from "@/data/mock";
-import type { Session } from "@/data/types";
-import { isSession } from "@/data/validate";
-import { filterValid, isRecord } from "@/lib/guards";
-import { createId } from "@/lib/id";
+import type { Session, SubagentTranscript, Transcript } from "@/data/types";
+import { services } from "@/features/ai/services";
+import { hasErrorCode } from "@/features/native/client";
+import { errorMessage } from "@/lib/errors";
+import type { LoadStatus } from "./projectStore";
+
+export interface Resource<T> {
+  status: Exclude<LoadStatus, "idle">;
+  data?: T;
+  error?: string;
+  /** The runtime reported that the item does not exist. */
+  notFound?: boolean;
+}
 
 interface SessionState {
-  sessions: Session[];
-  createSession: (projectId: string, title?: string) => Session;
-  renameSession: (id: string, title: string) => void;
-  touchSession: (id: string) => void;
-  setRuntimeSessionId: (id: string, runtimeSessionId: string) => void;
-  reset: () => void;
+  /** Chats per project id, newest first. */
+  lists: Record<string, Resource<Session[]> | undefined>;
+  /** Transcripts by `transcriptKey(projectId, sessionId)`. */
+  transcripts: Record<string, Resource<Transcript> | undefined>;
+  /** Subagent transcripts by `subagentKey(projectId, sessionId, agentId)`. */
+  subagents: Record<string, Resource<SubagentTranscript> | undefined>;
+  loadSessions: (projectId: string) => Promise<void>;
+  loadTranscript: (projectId: string, sessionId: string) => Promise<void>;
+  loadSubagent: (projectId: string, sessionId: string, agentId: string) => Promise<void>;
 }
 
-type PersistedSessions = Pick<SessionState, "sessions">;
+export const transcriptKey = (projectId: string, sessionId: string) => `${projectId}/${sessionId}`;
+export const subagentKey = (projectId: string, sessionId: string, agentId: string) =>
+  `${projectId}/${sessionId}/${agentId}`;
 
-function parsePersisted(value: unknown): Partial<PersistedSessions> {
-  if (!isRecord(value)) return {};
-  const sessions = filterValid(value.sessions, isSession);
-  return sessions ? { sessions } : {};
-}
+/** Error code returned by the native layer for a missing project, session or agent. */
+export const NOT_FOUND = "not_found";
 
-/** Applies `fn` to the session with `id`; returns the same state for unknown ids (no re-render). */
-function updateSession(
-  state: SessionState,
-  id: string,
-  fn: (s: Session) => Session,
-): SessionState | Partial<SessionState> {
-  if (!state.sessions.some((s) => s.id === id)) return state;
-  return { sessions: state.sessions.map((s) => (s.id === id ? fn(s) : s)) };
-}
+type Bucket = "lists" | "transcripts" | "subagents";
 
-export const useSessionStore = create<SessionState>()(
-  persist(
-    (set) => ({
-      sessions: createMockSessions(),
-      createSession: (projectId, title = "New session") => {
-        const now = new Date().toISOString();
-        const session: Session = { id: createId("session"), projectId, title, createdAt: now, updatedAt: now };
-        set((state) => ({ sessions: [session, ...state.sessions] }));
-        return session;
-      },
-      renameSession: (id, title) =>
-        set((state) => updateSession(state, id, (s) => ({ ...s, title: title.trim() || s.title }))),
-      touchSession: (id) =>
-        set((state) => updateSession(state, id, (s) => ({ ...s, updatedAt: new Date().toISOString() }))),
-      setRuntimeSessionId: (id, runtimeSessionId) =>
-        set((state) =>
-          state.sessions.some((s) => s.id === id && s.runtimeSessionId !== runtimeSessionId)
-            ? updateSession(state, id, (s) => ({ ...s, runtimeSessionId }))
-            : state,
-        ),
-      reset: () => set({ sessions: createMockSessions() }),
-    }),
-    {
-      name: "crowe-harness.sessions",
-      version: 1,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state): Partial<PersistedSessions> => ({ sessions: state.sessions }),
-      // v1 is the only shape so far: identity, minus malformed records.
-      migrate: (persisted) => parsePersisted(persisted),
-      merge: (persisted, current) => ({ ...current, ...parsePersisted(persisted) }),
-    },
-  ),
-);
+/**
+ * Non-persisted cache of Claude Code history (chats, transcripts, agent chats).
+ * Reloading keeps the previous data visible; only the latest request per key may write.
+ */
+export const useSessionStore = create<SessionState>()((set) => {
+  const latest = new Map<string, number>();
+  let counter = 0;
+
+  async function load<T>(bucket: Bucket, key: string, fetch: () => Promise<T>): Promise<void> {
+    const request = ++counter;
+    const id = `${bucket}:${key}`;
+    latest.set(id, request);
+    const isLatest = () => latest.get(id) === request;
+    const patch = (fn: (previous: Resource<T> | undefined) => Resource<T>) =>
+      set((state) => {
+        const map = state[bucket] as Record<string, Resource<T> | undefined>;
+        return { [bucket]: { ...map, [key]: fn(map[key]) } };
+      });
+
+    patch((previous) => ({ status: "loading", data: previous?.data }));
+    try {
+      const data = await fetch();
+      if (isLatest()) patch(() => ({ status: "ready", data }));
+    } catch (error) {
+      if (isLatest())
+        patch((previous) => ({
+          status: "error",
+          data: previous?.data,
+          error: errorMessage(error),
+          notFound: hasErrorCode(error, NOT_FOUND),
+        }));
+    }
+  }
+
+  return {
+    lists: {},
+    transcripts: {},
+    subagents: {},
+    loadSessions: (projectId) => load("lists", projectId, () => services.history.listSessions(projectId)),
+    loadTranscript: (projectId, sessionId) =>
+      load("transcripts", transcriptKey(projectId, sessionId), () =>
+        services.history.readSession(projectId, sessionId),
+      ),
+    loadSubagent: (projectId, sessionId, agentId) =>
+      load("subagents", subagentKey(projectId, sessionId, agentId), () =>
+        services.history.readSubagent(projectId, sessionId, agentId),
+      ),
+  };
+});
+
+const NO_SESSIONS: Session[] = [];
+
+/** Selector: loaded chats of a project (empty until loaded). */
+export const selectSessions = (projectId: string | undefined) => (state: SessionState) =>
+  (projectId ? state.lists[projectId]?.data : undefined) ?? NO_SESSIONS;
 
 /** Most recently updated first. */
 export function sortSessionsByUpdated(sessions: Session[]): Session[] {
   return [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-/** Sessions of one project, most recently updated first. Use with useShallow. */
-export function sessionsForProject(sessions: Session[], projectId: string | undefined): Session[] {
-  if (!projectId) return [];
-  return sortSessionsByUpdated(sessions.filter((s) => s.projectId === projectId));
 }

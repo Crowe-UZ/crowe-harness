@@ -1,6 +1,19 @@
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, Runtime, Url, Webview};
 
+pub mod claude;
+pub mod commands;
+pub mod config;
+pub mod error;
+pub mod fs;
+pub mod guard;
+pub mod projects;
+pub mod state;
+pub mod util;
+
+/// File (in the app data dir) holding the folders opened by the user.
+const REGISTRY_FILE: &str = "projects.json";
+
 /// Origin of the bundled frontend on Windows/Android (wry custom-protocol
 /// workaround). We run with `useHttpsScheme: false`, so this is
 /// `http://tauri.localhost`; `https` is accepted too so that flipping the
@@ -58,7 +71,34 @@ fn navigation_guard<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(navigation_guard())
+        // Used from Rust only (native folder picker in `projects_open_folder`);
+        // the capability grants the webview no `dialog:*` permission.
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::claude_status,
+            commands::claude_auth_login,
+            commands::claude_auth_logout,
+            commands::projects_list,
+            commands::projects_open_folder,
+            commands::sessions_list,
+            commands::session_read,
+            commands::subagent_read,
+            commands::turn_start,
+            commands::turn_cancel,
+            commands::fs_list_dir,
+            commands::fs_read_file,
+            commands::agents_list,
+            commands::skills_list,
+            commands::mcp_list,
+        ])
         .setup(|app| {
+            let registry_file = app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|dir| dir.join(REGISTRY_FILE));
+            app.manage(state::AppState::new(registry_file));
+
             // The main window is declared in tauri.conf.json with
             // `"create": false` and built here, because `on_new_window` is only
             // available on the builder (not on config-created windows).
@@ -82,6 +122,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Crowe Harness");
+        .build(tauri::generate_context!())
+        .expect("error while building Crowe Harness")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Closing every job handle kills each turn's process tree.
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    state.0.turns.kill_all();
+                }
+            }
+        });
 }

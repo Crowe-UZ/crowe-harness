@@ -1,4 +1,5 @@
 import { ChevronRight, CircleUser, KeyRound, Search, Settings } from "lucide-react";
+import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,17 +14,18 @@ import { Kbd } from "@/components/ui/kbd";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { describeAuthStatus } from "@/features/ai/auth";
-import { useRouteContext } from "@/hooks/use-route-context";
+import { subagentLabel, useRouteContext } from "@/hooks/use-route-context";
 import { useAuthStore } from "@/stores/authStore";
 import { useUiStore } from "@/stores/uiStore";
 import { Logo } from "./Logo";
 
 export function TopBar() {
   const navigate = useNavigate();
-  const { project, session } = useRouteContext();
+  const { project, session, sessionId, agentId, subagent, isNewChat } = useRouteContext();
   const setCommandOpen = useUiStore((s) => s.setCommandOpen);
   const authStatus = useAuthStore((s) => s.status);
   const account = authStatus?.state === "signed_in" ? authStatus.email : undefined;
+  const openAccount = () => void navigate("/settings?tab=account");
   const sidebar = useSidebar();
   const sidebarExpanded = sidebar.isMobile ? sidebar.openMobile : sidebar.open;
 
@@ -52,13 +54,20 @@ export function TopBar() {
           <Link to={`/projects/${project.id}`} className="truncate rounded px-1 hover:text-foreground">
             {project.name}
           </Link>
-          {session ? (
+          {isNewChat ? <Crumb current>New chat</Crumb> : null}
+          {sessionId && agentId ? (
             <>
               <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate px-1 text-foreground" aria-current="page">
-                {session.title}
-              </span>
+              <Link
+                to={`/projects/${project.id}/sessions/${sessionId}`}
+                className="truncate rounded px-1 hover:text-foreground"
+              >
+                {session?.title ?? "Chat"}
+              </Link>
+              <Crumb current>{subagentLabel(subagent)}</Crumb>
             </>
+          ) : sessionId ? (
+            <Crumb current>{session?.title ?? "Chat"}</Crumb>
           ) : null}
         </nav>
       ) : null}
@@ -88,12 +97,12 @@ export function TopBar() {
           </Tooltip>
           <DropdownMenuContent align="end" className="w-60">
             <DropdownMenuLabel className="space-y-0.5">
-              <div className="text-sm font-medium text-foreground">{account ?? "Local user"}</div>
+              <div className="truncate text-sm font-medium text-foreground">{account ?? "Claude account"}</div>
               <div className="text-xs font-normal text-muted-foreground">Claude: {describeAuthStatus(authStatus)}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void navigate("/settings?tab=account")}>
-              <KeyRound /> Claude account
+            <DropdownMenuItem onSelect={openAccount}>
+              <KeyRound /> Account and sign out
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void navigate("/settings")}>
               <Settings /> Settings
@@ -113,5 +122,16 @@ export function TopBar() {
         </Tooltip>
       </div>
     </header>
+  );
+}
+
+function Crumb({ children, current = false }: { children: ReactNode; current?: boolean }) {
+  return (
+    <>
+      <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="truncate px-1 text-foreground" aria-current={current ? "page" : undefined}>
+        {children}
+      </span>
+    </>
   );
 }

@@ -4,40 +4,58 @@
  * Claude credentials or tokens. See docs/SPEC.md §B1.
  */
 
-export type AuthMethod = "claude.ai" | "console" | "api_key" | "cloud";
+export interface ClaudeCodeInstall {
+  path: string;
+  version: string | null;
+  source: "path" | "desktop" | "local";
+}
 
 export type AuthStatus =
+  /** Running in a plain browser: there is no desktop runtime to talk to. */
+  | { state: "unavailable" }
   | { state: "cli_not_found" }
-  | { state: "signed_out" }
+  | { state: "signed_out"; install: ClaudeCodeInstall }
   | {
       state: "signed_in";
-      method: AuthMethod;
+      install: ClaudeCodeInstall;
+      /** True only for a Claude subscription sign-in (claude.ai); false for Console / API key sign-in. */
+      subscription: boolean;
+      method?: string;
       email?: string;
       orgName?: string;
       subscriptionType?: string;
     };
 
 export interface AuthService {
-  readonly id: "mock" | "claude-code";
   getStatus(): Promise<AuthStatus>;
+  /** Opens Claude Code's own sign-in in a visible console; resolves once it was launched (not when it finishes). */
   startLogin(): Promise<void>;
   logout(): Promise<void>;
-  /** Demo/dev capability: force a status so the UI can preview every state. Absent in real services. */
-  debugSetStatus?(status: AuthStatus): void;
+}
+
+/** The app shell is only reachable with a Claude subscription sign-in. */
+export function hasAccess(status: AuthStatus | undefined): boolean {
+  return status?.state === "signed_in" && status.subscription;
+}
+
+export function planLabel(subscriptionType: string | undefined): string | undefined {
+  if (!subscriptionType) return undefined;
+  return subscriptionType.charAt(0).toUpperCase() + subscriptionType.slice(1);
 }
 
 export function describeAuthStatus(status: AuthStatus | undefined): string {
   if (!status) return "Checking…";
   switch (status.state) {
+    case "unavailable":
+      return "Desktop app required";
     case "cli_not_found":
       return "Claude Code not found";
     case "signed_out":
       return "Not signed in";
-    case "signed_in":
-      return status.subscriptionType ? `Signed in · ${capitalize(status.subscriptionType)}` : "Signed in";
+    case "signed_in": {
+      if (!status.subscription) return "No Claude subscription";
+      const plan = planLabel(status.subscriptionType);
+      return plan ? `Signed in · ${plan}` : "Signed in";
+    }
   }
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

@@ -1,106 +1,130 @@
-import { describe, expect, it, vi } from "vitest";
-import type { AuthService, AuthStatus } from "@/features/ai/auth";
-import { MockAuthService } from "@/features/ai/MockAuthService";
-import { services } from "@/features/ai/services";
-import { useAuthStore } from "./authStore";
+import { waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { fakeNative, fixtures } from "@/test/fakes";
+import { authTiming, useAuthStore } from "./authStore";
 
 const auth = () => useAuthStore.getState();
 
-/** Auth service whose getStatus() calls resolve or reject only when the test says so. */
-function controllableAuth() {
-  const calls: { resolve: (s: AuthStatus) => void; reject: (e: unknown) => void }[] = [];
-  const service: AuthService = {
-    id: "mock",
-    getStatus: () => new Promise<AuthStatus>((resolve, reject) => calls.push({ resolve, reject })),
-    startLogin: () => Promise.resolve(),
-    logout: () => Promise.resolve(),
-  };
-  return { service, calls };
-}
-
-describe("useAuthStore", () => {
-  it("refresh loads the status and toggles loading", async () => {
-    services.auth = new MockAuthService({ state: "signed_in", method: "claude.ai", email: "dev@example.com" }, 0);
+describe("useAuthStore.refresh", () => {
+  it("loads the status and toggles checking", async () => {
     const pending = auth().refresh();
-    expect(auth().loading).toBe(true);
+    expect(auth().checking).toBe(true);
     await pending;
 
-    expect(auth().status).toMatchObject({ state: "signed_in", email: "dev@example.com" });
-    expect(auth().loading).toBe(false);
+    expect(auth().status).toMatchObject({ state: "signed_in", subscription: true, email: "dev@example.com" });
+    expect(auth().checking).toBe(false);
     expect(auth().error).toBeUndefined();
   });
 
-  it("refresh keeps the previous status and records the error when the service fails", async () => {
-    services.auth = new MockAuthService({ state: "signed_out" }, 0);
+  it("records a visible check failure but keeps the previous status", async () => {
     await auth().refresh();
-    vi.spyOn(services.auth, "getStatus").mockRejectedValueOnce(new Error("CLI crashed"));
+    fakeNative().fail("claudeStatus", "claude auth status crashed");
 
     await auth().refresh();
 
-    expect(auth().status).toEqual({ state: "signed_out" });
-    expect(auth().error).toBe("CLI crashed");
-    expect(auth().loading).toBe(false);
+    expect(auth().status).toMatchObject({ state: "signed_in" });
+    expect(auth().error).toBe("claude auth status crashed");
   });
 
-  it("signIn reports the error and stops loading", async () => {
-    await auth().signIn();
-    expect(auth().error).toMatch(/future update/);
-    expect(auth().loading).toBe(false);
-    expect(auth().status).toBeUndefined();
-  });
-
-  it("signOut signs out and refreshes the status", async () => {
-    services.auth = new MockAuthService({ state: "signed_in", method: "console" }, 0);
+  it("ignores failures of silent background checks once a status is known", async () => {
     await auth().refresh();
-    expect(auth().status?.state).toBe("signed_in");
+    fakeNative().fail("claudeStatus");
 
-    await auth().signOut();
+    await auth().refresh({ silent: true });
 
-    expect(auth().status).toEqual({ state: "signed_out" });
-    expect(auth().loading).toBe(false);
-  });
-
-  it("a new action clears the previous error", async () => {
-    await auth().signIn();
-    expect(auth().error).toBeDefined();
-    await auth().refresh();
     expect(auth().error).toBeUndefined();
+    expect(auth().status).toMatchObject({ state: "signed_in" });
   });
 
-  it("ignores a stale refresh that resolves after a newer one", async () => {
-    const { service, calls } = controllableAuth();
-    services.auth = service;
+  it("lets only the latest check write its result", async () => {
+    fakeNative().status = fixtures.signedOutStatus();
+    const first = auth().refresh();
+    fakeNative().status = fixtures.subscriptionStatus();
+    const second = auth().refresh();
+    await Promise.all([first, second]);
+    expect(auth().status).toMatchObject({ state: "signed_in" });
+  });
+});
 
-    const older = auth().refresh();
-    const newer = auth().refresh();
-    expect(calls).toHaveLength(2);
+describe("useAuthStore sign-in", () => {
+  it("opens Claude Code's sign-in and polls until the user is signed in", async () => {
+    const fake = fakeNative();
+    fake.status = fixtures.signedOutStatus();
+    await auth().refresh();
+    let polls = 0;
+    fake.claudeStatus.mockImplementation(() => {
+      polls += 1;
+      return Promise.resolve(polls < 3 ? fixtures.signedOutStatus() : fixtures.subscriptionStatus());
+    });
 
-    calls[1]?.resolve({ state: "signed_in", method: "claude.ai" });
-    await newer;
-    expect(auth().status?.state).toBe("signed_in");
-    expect(auth().loading).toBe(false);
+    await auth().startSignIn();
 
-    calls[0]?.resolve({ state: "signed_out" });
-    await older;
-    expect(auth().status?.state).toBe("signed_in");
-    expect(auth().loading).toBe(false);
+    expect(fake.claudeAuthLogin).toHaveBeenCalledTimes(1);
+    expect(polls).toBe(3);
+    expect(auth().signIn).toEqual({ phase: "idle" });
+    expect(auth().status).toMatchObject({ state: "signed_in", subscription: true });
   });
 
-  it("an older request does not clear loading while a newer one is in flight", async () => {
-    const { service, calls } = controllableAuth();
-    services.auth = service;
+  it("keeps polling through transient status failures", async () => {
+    const fake = fakeNative();
+    fake.status = fixtures.signedOutStatus();
+    fake.claudeStatus.mockRejectedValueOnce(new Error("busy")).mockResolvedValueOnce(fixtures.subscriptionStatus());
 
-    const older = auth().refresh();
-    const newer = auth().refresh();
+    await auth().startSignIn();
 
-    calls[0]?.reject(new Error("stale failure"));
-    await older;
-    expect(auth().loading).toBe(true);
-    expect(auth().error).toBeUndefined();
+    expect(auth().status).toMatchObject({ state: "signed_in" });
+  });
 
-    calls[1]?.resolve({ state: "signed_out" });
-    await newer;
-    expect(auth().loading).toBe(false);
-    expect(auth().status).toEqual({ state: "signed_out" });
+  it("stops polling when cancelled", async () => {
+    fakeNative().status = fixtures.signedOutStatus();
+    const run = auth().startSignIn();
+    await waitFor(() => expect(auth().signIn.phase).toBe("waiting"));
+
+    auth().cancelSignIn();
+    await run;
+    const calls = fakeNative().claudeStatus.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect(auth().signIn).toEqual({ phase: "idle" });
+    expect(fakeNative().claudeStatus.mock.calls.length).toBe(calls);
+  });
+
+  it("gives up after the timeout", async () => {
+    fakeNative().status = fixtures.signedOutStatus();
+    authTiming.pollTimeoutMs = 0;
+
+    await auth().startSignIn();
+
+    expect(auth().signIn).toEqual({ phase: "timed_out" });
+  });
+
+  it("reports a sign-in console that could not be opened", async () => {
+    fakeNative().fail("claudeAuthLogin", "Could not open a console window");
+
+    await auth().startSignIn();
+
+    expect(auth().signIn).toEqual({ phase: "failed", message: "Could not open a console window" });
+  });
+});
+
+describe("useAuthStore.signOut", () => {
+  it("signs out through Claude Code and refreshes the status", async () => {
+    await auth().refresh();
+
+    expect(await auth().signOut()).toBe(true);
+
+    expect(fakeNative().claudeAuthLogout).toHaveBeenCalledTimes(1);
+    expect(auth().status).toMatchObject({ state: "signed_out" });
+    expect(auth().signingOut).toBe(false);
+  });
+
+  it("reports a failed sign-out", async () => {
+    await auth().refresh();
+    fakeNative().fail("claudeAuthLogout", "logout failed");
+
+    expect(await auth().signOut()).toBe(false);
+
+    expect(auth().error).toBe("logout failed");
+    expect(auth().status).toMatchObject({ state: "signed_in" });
   });
 });

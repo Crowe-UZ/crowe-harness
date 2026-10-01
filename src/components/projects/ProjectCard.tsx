@@ -1,4 +1,4 @@
-import { FolderGit2, GitBranch } from "lucide-react";
+import { FolderGit2, MessagesSquare } from "lucide-react";
 import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import type { Project } from "@/data/types";
@@ -15,14 +15,16 @@ export function ProjectCard({ project }: { project: Project }) {
           <FolderGit2 className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
           <span className="truncate text-sm font-medium">{project.name}</span>
         </div>
-        <Badge variant="secondary">{project.language}</Badge>
+        {project.source === "opened" ? <Badge variant="secondary">Opened</Badge> : null}
       </div>
-      <p className="truncate font-mono text-xs text-muted-foreground">{project.path}</p>
+      <p className="truncate font-mono text-xs text-muted-foreground" title={project.path ?? undefined}>
+        {project.path ?? "Folder location unknown"}
+      </p>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>Last opened {formatRelativeTime(project.lastOpened)}</span>
+        <span>{project.lastActivity ? `Active ${formatRelativeTime(project.lastActivity)}` : "No activity yet"}</span>
         <span className="flex items-center gap-1">
-          <GitBranch className="size-3" aria-hidden="true" />
-          {project.branch}
+          <MessagesSquare className="size-3" aria-hidden="true" />
+          {project.sessionCount} {project.sessionCount === 1 ? "chat" : "chats"}
         </span>
       </div>
     </Link>

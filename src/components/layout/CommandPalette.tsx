@@ -1,7 +1,18 @@
-import { Bot, FolderGit2, Home, MessageSquare, Moon, Plug, Plus, Settings, Sparkles, Sun } from "lucide-react";
-import { useEffect } from "react";
+import {
+  Bot,
+  FolderGit2,
+  FolderOpen,
+  Home,
+  MessageSquare,
+  MessageSquarePlus,
+  Moon,
+  Plug,
+  Settings,
+  Sparkles,
+  Sun,
+} from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { useShallow } from "zustand/shallow";
 import {
   Command,
   CommandDialog,
@@ -13,17 +24,26 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useTheme } from "@/lib/theme";
-import { sortByLastOpened, useProjectStore } from "@/stores/projectStore";
-import { useSessionStore } from "@/stores/sessionStore";
+import { useOpenFolder } from "@/hooks/use-open-folder";
+import { useRouteContext } from "@/hooks/use-route-context";
+import type { Session } from "@/data/types";
+import { useProjectStore } from "@/stores/projectStore";
+import { sortSessionsByUpdated, useSessionStore } from "@/stores/sessionStore";
 import { useUiStore } from "@/stores/uiStore";
 
 export function CommandPalette() {
   const navigate = useNavigate();
   const open = useUiStore((s) => s.commandOpen);
   const setOpen = useUiStore((s) => s.setCommandOpen);
-  const setNewProjectOpen = useUiStore((s) => s.setNewProjectOpen);
-  const projects = useProjectStore(useShallow((s) => sortByLastOpened(s.projects)));
-  const sessions = useSessionStore((s) => s.sessions);
+  const projects = useProjectStore((s) => s.projects);
+  const lists = useSessionStore((s) => s.lists);
+  const { project } = useRouteContext();
+  const { openFolder } = useOpenFolder();
+  /** Chats of every project whose chat list is loaded, newest first. */
+  const sessions = useMemo(
+    () => sortSessionsByUpdated(Object.values(lists).flatMap((list): Session[] => list?.data ?? [])).slice(0, 50),
+    [lists],
+  );
   const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => {
@@ -47,7 +67,7 @@ export function CommandPalette() {
       open={open}
       onOpenChange={setOpen}
       title="Command palette"
-      description="Jump to a page, project or session"
+      description="Jump to a page, project or chat"
     >
       <Command>
         <CommandInput placeholder="Type a command or search…" />
@@ -75,9 +95,14 @@ export function CommandPalette() {
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => run(() => setNewProjectOpen(true))}>
-              <Plus /> New project
+            <CommandItem onSelect={() => run(() => void openFolder())}>
+              <FolderOpen /> Open folder
             </CommandItem>
+            {project ? (
+              <CommandItem onSelect={() => run(() => void navigate(`/projects/${project.id}/sessions/new`))}>
+                <MessageSquarePlus /> New chat in {project.name}
+              </CommandItem>
+            ) : null}
             <CommandItem onSelect={() => run(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))}>
               {resolvedTheme === "dark" ? <Sun /> : <Moon />} Toggle theme
             </CommandItem>
@@ -94,11 +119,11 @@ export function CommandPalette() {
               </CommandItem>
             ))}
           </CommandGroup>
-          <CommandGroup heading="Sessions">
+          <CommandGroup heading="Chats">
             {sessions.map((s) => (
               <CommandItem
                 key={s.id}
-                value={`session ${s.title} ${s.id}`}
+                value={`chat ${s.title} ${s.id}`}
                 onSelect={() => run(() => void navigate(`/projects/${s.projectId}/sessions/${s.id}`))}
               >
                 <MessageSquare /> {s.title}

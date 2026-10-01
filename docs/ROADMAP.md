@@ -8,19 +8,19 @@ pnpm lint:rust      # = cargo fmt --check && cargo clippy --all-targets -- -D wa
 cargo test          # в src-tauri, с M2
 ```
 
-плюс ручная проверка UI (`pnpm dev` → http://localhost:1420 или `pnpm tauri dev`).
+плюс ручная проверка UI в `pnpm tauri dev` (с M2 `pnpm dev` в обычном браузере показывает только экран «Open Crowe Harness desktop app»: все данные приходят из Rust).
 
 | Milestone | Статус |
 |---|---|
 | M0 — Окружение и документы | ✅ |
 | M1 — Foundation / UI shell | ✅ |
-| M2 — Claude Code и вход по подписке | ⏳ следующий |
-| M3 — Чат с реальным runtime | ☐ |
-| M4 — Persistence | ☐ |
-| M5 — Files | ☐ |
-| M6 — Terminal | ☐ |
+| M2 — Claude Code и вход по подписке | ✅ UI (обязательный sign-in gate) · Rust — по контракту [NATIVE_API.md](NATIVE_API.md) |
+| M3 — Чат с реальным runtime | ✅ headless (`claude -p`, `--resume`); вместо интерактивных permission prompts — уведомления `permission_denied` |
+| M4 — Persistence | 🟡 частично: проекты и чаты читаются из истории Claude Code; SQLite, поиск, rename/archive — ☐ |
+| M5 — Files | 🟡 read-only: ленивое дерево и просмотр; редактор, Ctrl+P, watcher — ☐ |
+| M6 — Terminal | ☐ (вкладка Terminal убрана до PTY) |
 | M7 — Git | ☐ |
-| M8 — Agents / Skills / MCP | ☐ |
+| M8 — Agents / Skills / MCP | 🟡 read-only списки (agents, skills, `claude mcp list`); редакторы и шаблоны — ☐ |
 | M9 — Settings, UX polish, accessibility | ☐ |
 | M10 — Quality и релиз 1.0 | ☐ |
 
@@ -36,6 +36,22 @@ cargo test          # в src-tauri, с M2
 - Все routes и страницы на mock-данных (Atlas/Mercury/Phoenix): Home, Projects, Project (Chat/Files/Terminal), Session, Agents, Skills, MCP, Settings, 404. Переключение темы.
 - Слой сервисов: интерфейсы `AIProvider`/`AuthService` + `MockAIProvider`/`MockAuthService`; Zustand stores.
 - **Приёмка:** DoD исходного ТЗ (пп. 1–22) + `pnpm tauri build` → NSIS-инсталлятор.
+
+## Сделано: реальные данные Claude Code вместо mock (M2, M3, read-only части M5/M8)
+
+- **Удалены** mock-данные и демо-код из runtime приложения: `src/data/mock.ts`, `MockAIProvider`, `MockAuthService`, `MockFsService`, mock-терминал, бейдж «Demo runtime», демо-переключатель состояний входа, «Reset demo data», засеянный разговор, фейковая статистика inspector, mock-списки agents/skills/MCP, диалоги создания/переключения. Тестовые фейки — только в `src/test/fakes/` (`FakeNativeClient` + fixtures).
+- **Native client** (`src/features/native/client.ts`): типизированные обёртки `invoke` для всех команд `NATIVE_COMMANDS`, `Channel` для `turn_start`, нормализация `NativeError`, `isDesktopRuntime()`.
+- **Сервисы** (`src/features/ai/services.ts` — единая точка сборки): `ClaudeCodeAuthService`, `ClaudeCodeProvider` (TurnEvent → AIEvent, `exit` закрывает поток, Stop → `turn_cancel`), `NativeHistoryService`, `NativeFsService`, `NativeConfigService`.
+- **Sign-in gate** (обязательный): checking · не desktop runtime · Claude Code не найден (команда установки, «Check again») · не вошёл («Sign in with Claude» → `claude_auth_login`, опрос статуса каждые 2 с до 10 мин, отмена) · вход без подписки (Console/API key — заблокирован, «Sign out») · ошибка с повтором. Повторная проверка при фокусе окна и каждые 5 мин; выход из аккаунта возвращает к gate.
+- **Данные:** проекты/чаты/транскрипты — непостоянные кэши из истории Claude Code; сохраняются только настройки (тема, inspector, permission mode по умолчанию, открытие последнего проекта) с миграцией v1/v2 → v3 и удалением ключей `crowe-harness.projects` / `.sessions`.
+- **Маршруты:** `/`, `/projects`, `/projects/:projectId` (→ последний чат или «Start a new chat»), `/projects/:projectId/sessions/new` (первый ход создаёт сессию, затем `replace` на реальный id), `/projects/:projectId/sessions/:sessionId` (продолжение через `--resume`), `/projects/:projectId/sessions/:sessionId/agents/:agentId` (read-only чат субагента), `/agents`, `/skills`, `/mcp`, `/settings`, 404.
+- **Чат:** транскрипт с карточками tool calls (результат по `tool_use` id, ошибки выделены, ссылка «Open agent chat» для Task/Agent), стриминг, Stop, ошибки, уведомления об отказе в разрешении с подсказкой переключить режим на «Accept edits», выбор permission mode в composer, «earlier messages truncated», постепенная подгрузка длинных чатов.
+- **Sidebar:** Open folder, проекты (топ-8 + All projects), чаты текущего проекта, вложенные agent chats активного чата. Inspector: модель, ветка, счётчики, использование инструментов, агенты, usage/стоимость последнего хода.
+
+### Открытые вопросы
+- Интерактивные разрешения (`--permission-prompt-tool`) — не реализованы: headless Claude Code сообщает об отказах, UI prompt остаётся для runtime, который пришлёт `permission_request`.
+- Внешние ссылки (документация установки) показываются как текст для копирования: навигация webview за пределы приложения запрещена; нужна отдельная команда `open_external` с проверкой `https:`.
+- Markdown/подсветка кода в ответах (B4) — пока plain text с сохранением пробелов.
 
 ## M2 — Claude Code и вход по подписке
 - Rust `claude/`: detect (`which` + override-путь), `auth_status`, `auth_login` (видимый терминал с `claude auth login`), `auth_logout`.

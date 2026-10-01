@@ -4,17 +4,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 import type { StoreApi } from "zustand";
-import { MockAIProvider } from "@/features/ai/MockAIProvider";
-import { MockAuthService } from "@/features/ai/MockAuthService";
 import { services, type Services } from "@/features/ai/services";
-import { MockFsService } from "@/features/workspace/MockFsService";
-import { useAuthStore } from "@/stores/authStore";
+import { authTiming, useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { installFakeServices } from "./fakes";
 import { installMatchMedia, resetMatchMedia } from "./matchMedia";
 
 // --- jsdom gaps used by the UI ------------------------------------------------
@@ -34,15 +32,16 @@ if (!("scrollIntoView" in Element.prototype)) {
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, writable: true, value: () => {} });
 }
 
-// --- Fast, deterministic services ---------------------------------------------
+// --- Fake native runtime, zero delays -------------------------------------------
 
 const realServices: Services = { ...services };
+const realTiming = { ...authTiming };
 
 beforeEach(() => {
-  // No delays and no permission prompts unless a test opts in (by assigning its own provider).
-  services.ai = new MockAIProvider({ chunkDelayMs: 0, stepDelayMs: 0 });
-  services.auth = new MockAuthService(undefined, 0);
-  services.fs = new MockFsService(0);
+  // Real service implementations over an in-memory native client (signed in with a subscription by default).
+  installFakeServices();
+  // Sign-in polling yields to the event loop but never waits.
+  authTiming.pollIntervalMs = 0;
 });
 
 // --- Isolation: every test starts from a fresh app state -----------------------
@@ -66,8 +65,9 @@ const stores: ResettableStore[] = [
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  // Abandon in-flight chat turns and live runtime sessions held outside the zustand state.
+  // Abandon in-flight turns and sign-in polling held outside the zustand state.
   useChatStore.getState().reset();
+  useAuthStore.getState().reset();
   for (const store of stores) store.resetToInitial();
   // After the store resets: persisted stores write their initial state back to storage.
   localStorage.clear();
@@ -76,4 +76,5 @@ afterEach(() => {
   document.title = "";
   resetMatchMedia();
   Object.assign(services, realServices);
+  Object.assign(authTiming, realTiming);
 });

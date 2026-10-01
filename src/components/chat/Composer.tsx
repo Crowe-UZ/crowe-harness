@@ -1,21 +1,25 @@
-import { Paperclip, SendHorizontal, Square } from "lucide-react";
+import { SendHorizontal, Square } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent, type Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-
-const ATTACH_HINT_ID = "composer-attach-hint";
+import { isPermissionMode, PERMISSION_MODE_LABELS, PERMISSION_MODES, type PermissionMode } from "@/features/ai/types";
 
 export function Composer({
   running,
   onSend,
   onStop,
+  mode,
+  onModeChange,
+  placeholder = "Ask Claude…",
   inputRef,
 }: {
   running: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
+  mode: PermissionMode;
+  onModeChange: (mode: PermissionMode) => void;
+  placeholder?: string;
   /** Lets the parent return focus to the message field (e.g. after a permission decision). */
   inputRef?: Ref<HTMLTextAreaElement>;
 }) {
@@ -50,35 +54,33 @@ export function Composer({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Ask Claude…"
+        placeholder={placeholder}
         rows={3}
         className="max-h-60 min-h-20 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
-      <div className="flex items-center gap-2 px-2 pb-2">
-        <span className="text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
+        <label htmlFor="permission-mode" className="sr-only">
+          Permission mode
+        </label>
+        <select
+          id="permission-mode"
+          value={mode}
+          disabled={running}
+          onChange={(e) => {
+            if (isPermissionMode(e.target.value)) onModeChange(e.target.value);
+          }}
+          className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring disabled:opacity-50"
+        >
+          {PERMISSION_MODES.map((value) => (
+            <option key={value} value={value}>
+              {PERMISSION_MODE_LABELS[value]}
+            </option>
+          ))}
+        </select>
+        <span className="hidden text-xs text-muted-foreground sm:inline">
           <Kbd>Enter</Kbd> to send · <Kbd>Shift+Enter</Kbd> new line
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* aria-disabled keeps the button focusable so the tooltip is reachable by keyboard */}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-disabled="true"
-                aria-describedby={ATTACH_HINT_ID}
-                className="cursor-not-allowed opacity-50 hover:bg-transparent! hover:text-inherit! active:translate-y-0!"
-                onClick={(e) => e.preventDefault()}
-              >
-                <Paperclip data-icon="inline-start" /> Attach
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Attachments are coming in a future update</TooltipContent>
-          </Tooltip>
-          <span id={ATTACH_HINT_ID} className="sr-only">
-            Unavailable. Attachments are coming in a future update.
-          </span>
           {/*
             One persistent button that switches between Send and Stop, so keyboard focus is never
             dropped when a response starts or ends. aria-disabled (not disabled) keeps it focusable.

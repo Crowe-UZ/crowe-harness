@@ -1,12 +1,11 @@
 import { Link } from "react-router";
-import { describeAuthStatus } from "@/features/ai/auth";
-import { services } from "@/features/ai/services";
+import { describeAuthStatus, hasAccess } from "@/features/ai/auth";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 
 export function StatusBar() {
   const status = useAuthStore((s) => s.status);
-  const signedIn = status?.state === "signed_in";
+  const version = status?.state === "signed_in" || status?.state === "signed_out" ? status.install.version : undefined;
 
   return (
     <footer
@@ -22,12 +21,12 @@ export function StatusBar() {
         className="flex items-center gap-1.5 rounded px-1 hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring focus-visible:outline-none"
       >
         <span
-          className={cn("size-2 rounded-full", signedIn ? "bg-success" : "bg-muted-foreground/50")}
+          className={cn("size-2 rounded-full", hasAccess(status) ? "bg-success" : "bg-muted-foreground/50")}
           aria-hidden="true"
         />
         Claude: {describeAuthStatus(status)}
       </Link>
-      {services.ai.id === "mock" ? <span className="rounded border px-1.5 leading-4">Demo runtime</span> : null}
+      {version ? <span>Claude Code {version}</span> : null}
       <span className="ml-auto tabular-nums">v{__APP_VERSION__}</span>
     </footer>
   );

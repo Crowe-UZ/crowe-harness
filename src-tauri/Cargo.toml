@@ -25,7 +25,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
+ignore = "0.4"
+semver = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["process", "io-util", "rt", "time", "sync", "macros"] }
+memchr = "2"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -46,3 +53,9 @@ opt-level = 3
 # Strip only debuginfo: keep the symbol table so release crash reports
 # still have usable function names in backtraces.
 strip = "debuginfo"
+
+[target."cfg(windows)".dependencies]
+win32job = "2"
+
+[dev-dependencies]
+tempfile = "3"

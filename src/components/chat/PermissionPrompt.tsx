@@ -2,22 +2,12 @@ import { ShieldAlert } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import type { PermissionDecision } from "@/features/ai/types";
+import { summarizeToolInput } from "@/features/chat/view-model";
 import type { PendingPermission } from "@/stores/chatStore";
 
-function describeInput(input: unknown): string | undefined {
-  if (input === undefined || input === null) return undefined;
-  if (typeof input === "object" && "description" in input && typeof input.description === "string") {
-    return input.description;
-  }
-  try {
-    return JSON.stringify(input);
-  } catch {
-    return undefined;
-  }
-}
-
 /**
- * Asks the user to allow or deny a tool call requested by the runtime.
+ * Asks the user to allow or deny a tool call requested by the runtime. Only shown for runtimes that
+ * emit `permission_request`; headless Claude Code reports denials instead (see ChatNotices).
  * Non-modal alert dialog: it is announced when it appears and takes focus (first decision),
  * the parent returns focus to the composer once a decision is made.
  */
@@ -28,7 +18,7 @@ export function PermissionPrompt({
   request: PendingPermission;
   onDecide: (decision: PermissionDecision) => void;
 }) {
-  const detail = describeInput(request.input);
+  const detail = summarizeToolInput(request.input) || undefined;
   const titleId = `permission-${request.id}-title`;
   const detailId = `permission-${request.id}-detail`;
   const firstActionRef = useRef<HTMLButtonElement>(null);
