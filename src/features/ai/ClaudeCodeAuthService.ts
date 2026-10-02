@@ -1,5 +1,5 @@
 import type { NativeClient } from "@/features/native/client";
-import type { ClaudeStatus } from "@/features/native/contract";
+import type { ClaudeStatus, LocateReport } from "@/features/native/contract";
 import type { AuthService, AuthStatus } from "./auth";
 
 /** Converts the raw `claude_status` result into the UI auth state. */
@@ -28,9 +28,22 @@ export class ClaudeCodeAuthService implements AuthService {
     private readonly isDesktop: () => boolean,
   ) {}
 
-  async getStatus(): Promise<AuthStatus> {
+  async getStatus({ force = false }: { force?: boolean } = {}): Promise<AuthStatus> {
     if (!this.isDesktop()) return { state: "unavailable" };
-    return toAuthStatus(await this.client.claudeStatus());
+    return toAuthStatus(await this.client.claudeStatus({ forceRefresh: force }));
+  }
+
+  async pickExecutable(): Promise<AuthStatus | null> {
+    const status = await this.client.claudePickExecutable();
+    return status ? toAuthStatus(status) : null;
+  }
+
+  async clearExecutable(): Promise<AuthStatus> {
+    return toAuthStatus(await this.client.claudeClearExecutable());
+  }
+
+  locateReport(): Promise<LocateReport> {
+    return this.client.claudeLocateReport();
   }
 
   startLogin(): Promise<void> {

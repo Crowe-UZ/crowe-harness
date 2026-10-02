@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AuthStatus } from "@/features/ai/auth";
+import type { AuthStatus, PickResult } from "@/features/ai/auth";
 import { services } from "@/features/ai/services";
 import { errorMessage } from "@/lib/errors";
 
@@ -31,8 +31,15 @@ interface AuthState {
   error: string | undefined;
   signIn: SignInPhase;
   signingOut: boolean;
-  /** `silent`: background re-check (focus, timer) — no busy state, failures keep the previous status. */
-  refresh: (options?: { silent?: boolean }) => Promise<void>;
+  /**
+   * `silent`: background re-check (focus, timer) — no busy state, failures keep the previous status.
+   * `force`: re-discover Claude Code instead of using the cached location ("Check again").
+   */
+  refresh: (options?: { silent?: boolean; force?: boolean }) => Promise<void>;
+  /** Native file picker to choose the Claude Code executable by hand; the status updates on success. */
+  pickExecutable: () => Promise<PickResult>;
+  /** Forgets the chosen executable and detects Claude Code automatically again. */
+  clearExecutable: () => Promise<{ ok: true; status: AuthStatus } | { ok: false; message: string }>;
   startSignIn: () => Promise<void>;
   cancelSignIn: () => void;
   signOut: () => Promise<boolean>;
@@ -53,17 +60,41 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signIn: { phase: "idle" },
   signingOut: false,
 
-  refresh: async ({ silent = false } = {}) => {
+  refresh: async ({ silent = false, force = false } = {}) => {
     const request = ++latestCheck;
     if (!silent) set({ checking: true, error: undefined });
     try {
-      const status = await services.auth.getStatus();
+      const status = await services.auth.getStatus({ force });
       if (request === latestCheck) set({ status, error: undefined });
     } catch (error) {
       // A failed background check never signs the user out; a visible one reports the error.
       if (request === latestCheck && (!silent || get().status === undefined)) set({ error: errorMessage(error) });
     } finally {
       if (request === latestCheck) set({ checking: false });
+    }
+  },
+
+  pickExecutable: async () => {
+    let status: AuthStatus | null;
+    try {
+      status = await services.auth.pickExecutable();
+    } catch (error) {
+      return { kind: "failed", message: errorMessage(error) };
+    }
+    if (!status) return { kind: "cancelled" };
+    latestCheck += 1; // supersede any older check still in flight
+    set({ status, error: undefined, checking: false });
+    return { kind: "picked", status };
+  },
+
+  clearExecutable: async () => {
+    try {
+      const status = await services.auth.clearExecutable();
+      latestCheck += 1;
+      set({ status, error: undefined, checking: false });
+      return { ok: true, status };
+    } catch (error) {
+      return { ok: false, message: errorMessage(error) };
     }
   },
 

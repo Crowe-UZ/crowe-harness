@@ -9,6 +9,7 @@
 use std::time::Instant;
 
 use crowe_harness_lib::claude::auth::parse_auth_status;
+use crowe_harness_lib::claude::finder::{ClaudeFinder, Discovery};
 use crowe_harness_lib::claude::history::{self, HistoryCache};
 use crowe_harness_lib::claude::{cli, locate};
 use crowe_harness_lib::guard::ConfigGuard;
@@ -18,14 +19,16 @@ use crowe_harness_lib::projects::{self, CwdCache, OpenedRegistry};
 #[ignore = "uses the real Claude Code install and history of this machine"]
 async fn smoke_real_machine() {
     let t = Instant::now();
-    let Some(loc) = locate::locate() else {
+    let finder = ClaudeFinder::new(None, Discovery::real());
+    let Some(loc) = finder.find(true).await.expect("discovery") else {
         println!("claude: not found");
         return;
     };
     println!(
-        "locate: {:?} source={:?} in {:?}",
+        "locate: {:?} source={:?} validated={} in {:?}",
         loc.exe,
         loc.source,
+        loc.version,
         t.elapsed()
     );
 

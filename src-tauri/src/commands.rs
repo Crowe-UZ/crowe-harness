@@ -10,8 +10,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::claude::auth::{parse_auth_status, ClaudeInstall, ClaudeStatus};
 use crate::claude::cli;
+use crate::claude::finder::{LocateReport, Located};
 use crate::claude::history::{self, SessionInfo, SubagentTranscript, Transcript};
-use crate::claude::locate::{self, Located};
+use crate::claude::locate;
 use crate::claude::mcp::{parse_mcp_list, McpServerInfo};
 use crate::claude::stream::TurnEvent;
 use crate::claude::turn::{self, PermissionMode, TurnSpec};
@@ -20,24 +21,26 @@ use crate::error::{join_blocking, NativeError, NativeResult};
 use crate::fs::{self as wfs, DirEntry, FileContent};
 use crate::installer::{self, Cancel, InstallChannel, InstallDirs, InstallEvent, InstallPlan};
 use crate::projects::{self, ProjectInfo};
-use crate::state::{AppState, ClaudeDirs};
+use crate::state::{AppState, ClaudeDirs, Inner};
 use crate::util::display_path;
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(20);
 const MCP_TIMEOUT: Duration = Duration::from_secs(30);
 
-async fn locate_claude() -> NativeResult<Located> {
-    join_blocking(|| Ok(locate::locate()))
+/// The `claude` to run (cached; discovered when nothing usable is cached).
+async fn locate_claude(inner: &Inner) -> NativeResult<Located> {
+    inner
+        .claude
+        .find(false)
         .await?
         .ok_or_else(NativeError::claude_not_found)
 }
 
 // ---------------------------------------------------------------- Claude Code install / sign-in
 
-#[tauri::command]
-pub async fn claude_status(state: State<'_, AppState>) -> NativeResult<ClaudeStatus> {
-    let inner = state.0.clone();
-    let Some(loc) = join_blocking(|| Ok(locate::locate())).await? else {
+/// `ClaudeStatus` for a located install (`None` = not found).
+async fn status_for(inner: &Inner, loc: Option<Located>) -> NativeResult<ClaudeStatus> {
+    let Some(loc) = loc else {
         return Ok(ClaudeStatus {
             install: None,
             logged_in: false,
@@ -52,10 +55,14 @@ pub async fn claude_status(state: State<'_, AppState>) -> NativeResult<ClaudeSta
         cli::run(&loc.exe, &["--version"], STATUS_TIMEOUT),
         cli::run(&loc.exe, &["auth", "status", "--json"], STATUS_TIMEOUT),
     );
-    let version = version_out
+    // Fresh version (Claude Code updates itself); the validated one as fallback.
+    let mut install = loc.install();
+    if let Some(v) = version_out
         .ok()
         .and_then(|o| locate::parse_version(&o.stdout))
-        .or(loc.dir_version.clone());
+    {
+        install.version = Some(v);
+    }
     let auth_out = auth_out?;
     let auth = parse_auth_status(&auth_out.stdout).ok_or_else(|| {
         NativeError::new(
@@ -71,11 +78,7 @@ pub async fn claude_status(state: State<'_, AppState>) -> NativeResult<ClaudeSta
         projects_dir: auth.projects_dir.clone(),
     });
     Ok(ClaudeStatus {
-        install: Some(ClaudeInstall {
-            path: display_path(&loc.exe),
-            version,
-            source: loc.source,
-        }),
+        install: Some(install),
         logged_in: auth.logged_in,
         auth_method: auth.auth_method,
         subscription: auth.subscription,
@@ -85,17 +88,79 @@ pub async fn claude_status(state: State<'_, AppState>) -> NativeResult<ClaudeSta
     })
 }
 
+/// `forceRefresh: true` ("Check again") re-discovers Claude Code instead of
+/// using the cached location.
+#[tauri::command]
+pub async fn claude_status(
+    state: State<'_, AppState>,
+    force_refresh: Option<bool>,
+) -> NativeResult<ClaudeStatus> {
+    let inner = state.0.clone();
+    let loc = inner.claude.find(force_refresh.unwrap_or(false)).await?;
+    status_for(&inner, loc).await
+}
+
+/// Native file picker (Rust side: the webview never supplies the path) to
+/// choose the Claude Code executable by hand. `null` when the user cancels;
+/// rejects with `invalid_executable` when the file is not a working Claude Code.
+#[tauri::command]
+pub async fn claude_pick_executable(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> NativeResult<Option<ClaudeStatus>> {
+    use tauri_plugin_dialog::DialogExt;
+    let inner = state.0.clone();
+    let picked = join_blocking(move || {
+        let mut dialog = app.dialog().file().set_title("Locate Claude Code");
+        if cfg!(windows) {
+            dialog = dialog.add_filter("Claude Code (claude.exe)", &["exe"]);
+        }
+        if let Some(dir) = locate::home_dir() {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(file) = dialog.blocking_pick_file() else {
+            return Ok(None);
+        };
+        file.into_path()
+            .map(Some)
+            .map_err(|_| NativeError::new("invalid_executable", "Unsupported file location."))
+    })
+    .await?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let loc = inner.claude.set_override(&picked).await?;
+    status_for(&inner, Some(loc)).await.map(Some)
+}
+
+/// Forgets the manual location and detects Claude Code automatically again.
+#[tauri::command]
+pub async fn claude_clear_executable(state: State<'_, AppState>) -> NativeResult<ClaudeStatus> {
+    let inner = state.0.clone();
+    let loc = inner.claude.clear_override().await?;
+    status_for(&inner, loc).await
+}
+
+/// Diagnostics: every location checked and why candidates were rejected.
+#[tauri::command]
+pub async fn claude_locate_report(state: State<'_, AppState>) -> NativeResult<LocateReport> {
+    state.0.claude.report().await
+}
+
 /// Opens a visible console running `claude auth login --claudeai` (the
 /// browser OAuth flow is driven by Claude Code itself). Returns immediately;
 /// the UI polls `claude_status`.
 #[tauri::command]
-pub async fn claude_auth_login() -> NativeResult<()> {
-    let loc = locate_claude().await?;
+pub async fn claude_auth_login(state: State<'_, AppState>) -> NativeResult<()> {
+    let loc = locate_claude(&state.0).await?;
     let mut cmd = std::process::Command::new(&loc.exe);
     cmd.args(["auth", "login", "--claudeai"])
         .current_dir(locate::home_dir().unwrap_or_else(std::env::temp_dir));
     for key in cli::SCRUBBED_ENV {
         cmd.env_remove(key);
+    }
+    if let Some(path) = cli::child_path(&loc.exe) {
+        cmd.env("PATH", path);
     }
     #[cfg(windows)]
     {
@@ -109,8 +174,8 @@ pub async fn claude_auth_login() -> NativeResult<()> {
 }
 
 #[tauri::command]
-pub async fn claude_auth_logout() -> NativeResult<()> {
-    let loc = locate_claude().await?;
+pub async fn claude_auth_logout(state: State<'_, AppState>) -> NativeResult<()> {
+    let loc = locate_claude(&state.0).await?;
     let out = cli::run(&loc.exe, &["auth", "logout"], STATUS_TIMEOUT).await?;
     if out.code == Some(0) {
         Ok(())
@@ -128,21 +193,14 @@ pub async fn claude_auth_logout() -> NativeResult<()> {
 // ---------------------------------------------------------------- Claude Code installer
 
 /// Current install (if any) with its version, for `InstallPlan.alreadyInstalled`.
-async fn current_install() -> Option<ClaudeInstall> {
-    let loc = join_blocking(|| Ok(locate::locate()))
+async fn current_install(inner: &Inner) -> Option<ClaudeInstall> {
+    inner
+        .claude
+        .find(false)
         .await
         .ok()
-        .flatten()?;
-    let version = cli::run(&loc.exe, &["--version"], STATUS_TIMEOUT)
-        .await
-        .ok()
-        .and_then(|o| locate::parse_version(&o.stdout))
-        .or(loc.dir_version.clone());
-    Some(ClaudeInstall {
-        path: display_path(&loc.exe),
-        version,
-        source: loc.source,
-    })
+        .flatten()
+        .map(|loc| loc.install())
 }
 
 fn home_or_err() -> NativeResult<PathBuf> {
@@ -153,11 +211,16 @@ fn home_or_err() -> NativeResult<PathBuf> {
 
 /// Resolves the channel and verifies the signed manifest (no binary download).
 #[tauri::command]
-pub async fn claude_install_plan(channel: InstallChannel) -> NativeResult<InstallPlan> {
+pub async fn claude_install_plan(
+    state: State<'_, AppState>,
+    channel: InstallChannel,
+) -> NativeResult<InstallPlan> {
     let home = home_or_err()?;
     let cancel = Cancel::never();
-    let (release, already_installed) =
-        tokio::join!(installer::plan_release(channel, &cancel), current_install());
+    let (release, already_installed) = tokio::join!(
+        installer::plan_release(channel, &cancel),
+        current_install(&state.0)
+    );
     let release = release?;
     Ok(InstallPlan {
         version: release.version,
@@ -187,6 +250,7 @@ pub async fn claude_install_start(
         .map_err(|_| NativeError::internal("the app cache directory is unavailable"))?
         .join("installer");
     let registry = state.0.installs.clone();
+    let finder = state.0.claude.clone();
     let (install_id, cancel) = registry.begin()?;
     let dirs = InstallDirs { cache_dir, home };
     let id = install_id.clone();
@@ -203,6 +267,9 @@ pub async fn claude_install_start(
             .await
             .unwrap_or_else(|_| Err(NativeError::internal("the installer task failed")));
         registry.finish(&id);
+        if result.is_ok() {
+            finder.invalidate(); // the next check finds the fresh native install
+        }
         let _ = on_event.send(InstallEvent::terminal(result));
     });
     Ok(install_id)
@@ -353,7 +420,7 @@ pub async fn turn_start(
         resolved.require_root().map(std::path::Path::to_path_buf)
     })
     .await?;
-    let loc = locate_claude().await?;
+    let loc = locate_claude(&inner).await?;
     turn::start(
         inner.turns.clone(),
         TurnSpec {
@@ -445,8 +512,8 @@ pub async fn skills_list(
 }
 
 #[tauri::command]
-pub async fn mcp_list() -> NativeResult<Vec<McpServerInfo>> {
-    let loc = locate_claude().await?;
+pub async fn mcp_list(state: State<'_, AppState>) -> NativeResult<Vec<McpServerInfo>> {
+    let loc = locate_claude(&state.0).await?;
     let out = cli::run(&loc.exe, &["mcp", "list"], MCP_TIMEOUT).await?;
     Ok(parse_mcp_list(&out.stdout))
 }

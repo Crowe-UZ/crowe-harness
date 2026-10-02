@@ -9,6 +9,7 @@ import type {
   FileContent,
   InstallChannel,
   InstallPlan,
+  LocateReport,
   McpServerInfo,
   ProjectInfo,
   SessionInfo,
@@ -19,6 +20,29 @@ import type {
 } from "@/features/native/contract";
 
 export const INSTALL = { path: "C:\\Users\\dev\\.local\\bin\\claude.exe", version: "2.3.0", source: "local" } as const;
+
+/** A Claude Code the user chose by hand (`claude_pick_executable`). */
+export const CUSTOM_INSTALL = { path: "D:\\Tools\\claude\\claude.exe", version: "2.1.284", source: "custom" } as const;
+
+/** `claude_locate_report` on a machine where nothing usable was found. */
+export function locateReport(overrides: Partial<LocateReport> = {}): LocateReport {
+  return {
+    chosen: null,
+    checked: [
+      { path: "D:\\Old\\claude.exe", source: "custom", result: "missing" },
+      { path: "C:\\Windows\\system32\\claude.exe", source: "path", result: "missing" },
+      { path: "~\\.local\\bin\\claude.exe", source: "local", result: "rejected", reason: "bad_output" },
+      {
+        path: "~\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Anthropic.ClaudeCode_*\\claude.exe",
+        source: "package",
+        result: "missing",
+      },
+      { path: "~\\scoop\\shims\\claude.exe", source: "package", result: "rejected", reason: "timeout" },
+      { path: "12 more locations", source: "path", result: "missing", reason: "summarized" },
+    ],
+    ...overrides,
+  };
+}
 
 export function subscriptionStatus(overrides: Partial<ClaudeStatus> = {}): ClaudeStatus {
   return {

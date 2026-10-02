@@ -14,6 +14,7 @@ export type NativeErrorCode =
   | "not_found"
   | "forbidden"
   | "claude_not_found"
+  | "invalid_executable"
   | "spawn_failed"
   | "timeout"
   | "cli_failed"
@@ -21,10 +22,31 @@ export type NativeErrorCode =
   | "io"
   | "internal";
 
+/** Where the Claude Code that runs was found; `custom` = chosen by the user (`claude_pick_executable`). */
+export type ClaudeInstallSource = "custom" | "path" | "local" | "package" | "desktop";
+
 export interface ClaudeInstall {
   path: string;
   version: string | null;
-  source: "path" | "local" | "package" | "desktop";
+  source: ClaudeInstallSource;
+}
+
+/** Why a candidate was not accepted (`summarized` marks a line counting several missing locations). */
+export type LocateRejection = "not_executable" | "timeout" | "bad_output" | "spawn_failed";
+
+export interface CheckedLocation {
+  /** Path checked (wildcards as `*`); the home directory is shown as `~`. */
+  path: string;
+  source: ClaudeInstallSource;
+  result: "ok" | "missing" | "rejected";
+  /** A `LocateRejection` for `rejected`, `"summarized"` for a summary line; typed as string for future codes. */
+  reason?: string;
+}
+
+/** `claude_locate_report`: every location checked, highest priority first (at most 60 entries). */
+export interface LocateReport {
+  chosen: ClaudeInstall | null;
+  checked: CheckedLocation[];
 }
 
 export interface ClaudeStatus {
@@ -191,6 +213,9 @@ export const NATIVE_COMMANDS = [
   "claude_status",
   "claude_auth_login",
   "claude_auth_logout",
+  "claude_pick_executable",
+  "claude_clear_executable",
+  "claude_locate_report",
   "claude_install_plan",
   "claude_install_start",
   "claude_install_cancel",

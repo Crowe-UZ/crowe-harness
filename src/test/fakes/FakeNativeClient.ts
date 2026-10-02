@@ -1,5 +1,10 @@
 import { vi } from "vitest";
-import { NativeCallError, type NativeClient, type TurnStartArgs } from "@/features/native/client";
+import {
+  NativeCallError,
+  type ClaudeStatusOptions,
+  type NativeClient,
+  type TurnStartArgs,
+} from "@/features/native/client";
 import type {
   AgentInfo,
   ClaudeInstall,
@@ -10,6 +15,7 @@ import type {
   InstallEvent,
   InstallPhase,
   InstallPlan,
+  LocateReport,
   McpServerInfo,
   ProjectInfo,
   SessionInfo,
@@ -130,6 +136,12 @@ export class FakeNativeClient implements NativeClient {
   skills: SkillInfo[] = fixtures.skills();
   projectSkills: Record<string, SkillInfo[]> = { atlas: fixtures.projectSkills() };
   mcp: McpServerInfo[] = fixtures.mcpServers();
+  /** File chosen in the next `claude_pick_executable` (null = user cancelled the picker). Invalid: `fail(...)`. */
+  pickedExecutable: ClaudeInstall | null = null;
+  /** What automatic detection finds after `claude_clear_executable` (null = nothing). */
+  detectedInstall: ClaudeInstall | null = { ...fixtures.INSTALL };
+  /** What `claude_locate_report` returns. */
+  report: LocateReport = fixtures.locateReport();
   /** Result of the next `projects_open_folder` (null = user cancelled the picker). */
   openFolderResult: ProjectInfo | null = null;
   /** Turns started so far, oldest first. */
@@ -176,9 +188,35 @@ export class FakeNativeClient implements NativeClient {
   }
 
   readonly claudeStatus = vi.fn(
-    settle((): ClaudeStatus => {
+    settle((_options?: ClaudeStatusOptions): ClaudeStatus => {
       this.guard("claudeStatus");
       return clone(this.status);
+    }),
+  );
+
+  readonly claudePickExecutable = vi.fn(
+    settle((): ClaudeStatus | null => {
+      this.guard("claudePickExecutable");
+      if (!this.pickedExecutable) return null;
+      this.status = { ...this.status, install: clone(this.pickedExecutable) };
+      return clone(this.status);
+    }),
+  );
+
+  readonly claudeClearExecutable = vi.fn(
+    settle((): ClaudeStatus => {
+      this.guard("claudeClearExecutable");
+      this.status = this.detectedInstall
+        ? { ...this.status, install: clone(this.detectedInstall) }
+        : fixtures.notInstalledStatus();
+      return clone(this.status);
+    }),
+  );
+
+  readonly claudeLocateReport = vi.fn(
+    settle((): LocateReport => {
+      this.guard("claudeLocateReport");
+      return clone(this.report);
     }),
   );
 

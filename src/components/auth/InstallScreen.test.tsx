@@ -351,3 +351,99 @@ describe("detectOs", () => {
     expect(detectOs({ platform: "", userAgent: "" } as Navigator)).toBeUndefined();
   });
 });
+
+describe("Claude Code not found — locating it by hand", () => {
+  it("re-discovers Claude Code when checking again", async () => {
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+    expect(fakeNative().claudeStatus).toHaveBeenLastCalledWith({ forceRefresh: false });
+
+    await user.click(screen.getByRole("button", { name: "Check again" }));
+
+    await waitFor(() => expect(fakeNative().claudeStatus).toHaveBeenLastCalledWith({ forceRefresh: true }));
+  });
+
+  it("continues with a Claude Code chosen in the file picker", async () => {
+    fakeNative().pickedExecutable = { ...fixtures.CUSTOM_INSTALL };
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+
+    await user.click(screen.getByRole("button", { name: "Locate Claude Code…" }));
+
+    expect(await heading("Sign in with your Claude subscription")).toBeInTheDocument();
+    expect(fakeNative().claudePickExecutable).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains why the chosen file cannot be used", async () => {
+    fakeNative().fail(
+      "claudePickExecutable",
+      "The selected file is not a working Claude Code: it did not report a Claude Code version (bad_output).",
+      "invalid_executable",
+    );
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+
+    await user.click(screen.getByRole("button", { name: "Locate Claude Code…" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("it did not report a Claude Code version (bad_output)");
+    expect(screen.getByRole("heading", { level: 1, name: "Claude Code not found" })).toBeInTheDocument();
+  });
+
+  it("stays on the screen when the file picker is cancelled", async () => {
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+
+    await user.click(screen.getByRole("button", { name: "Locate Claude Code…" }));
+
+    await waitFor(() => expect(fakeNative().claudePickExecutable).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Locate Claude Code…" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Claude Code not found" })).toBeInTheDocument();
+  });
+
+  it("shows what was checked, with sources and reasons", async () => {
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+    expect(fakeNative().claudeLocateReport).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Show what was checked" }));
+
+    const list = await screen.findByRole("list", { name: "Locations checked" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(6);
+    expect(items[0]).toHaveTextContent("D:\\Old\\claude.exe");
+    expect(items[0]).toHaveTextContent("Custom · Not found");
+    expect(items[2]).toHaveTextContent("~\\.local\\bin\\claude.exe");
+    expect(items[2]).toHaveTextContent("Native install · Did not report a Claude Code version");
+    expect(items[4]).toHaveTextContent("Package manager · Did not answer within 10 seconds");
+    expect(items[5]).toHaveTextContent("12 more locations");
+    expect(items[5]).toHaveTextContent("PATH · Not found (summarized)");
+    expect(fakeNative().claudeLocateReport).toHaveBeenCalledTimes(1);
+  });
+
+  it("points to Check again when the report finds Claude Code", async () => {
+    fakeNative().report = fixtures.locateReport({
+      chosen: { path: "C:\\Users\\dev\\.local\\bin\\claude.exe", version: "2.1.290", source: "local" },
+    });
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+
+    await user.click(screen.getByRole("button", { name: "Show what was checked" }));
+
+    expect(await screen.findByText(/Claude Code 2\.1\.290 was found at/)).toHaveTextContent(
+      "Click Check again to continue.",
+    );
+  });
+
+  it("reports a failed diagnostics run", async () => {
+    fakeNative().fail("claudeLocateReport", "background task failed");
+    const { user } = await renderApp("/");
+    await heading("Claude Code not found");
+
+    await user.click(screen.getByRole("button", { name: "Show what was checked" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not list the checked locations: background task failed",
+    );
+  });
+});

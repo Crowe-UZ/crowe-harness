@@ -4,7 +4,7 @@
  * Claude credentials or tokens. See docs/SPEC.md §B1.
  */
 
-import type { ClaudeInstall } from "@/features/native/contract";
+import type { CheckedLocation, ClaudeInstall, LocateReport } from "@/features/native/contract";
 
 /** Where the Claude Code that Crowe Harness runs was found (docs/NATIVE_API.md, "Locating `claude`"). */
 export type ClaudeCodeInstall = ClaudeInstall;
@@ -12,6 +12,7 @@ export type ClaudeCodeInstallSource = ClaudeInstall["source"];
 
 /** Short labels for `ClaudeCodeInstall.source`. */
 export const INSTALL_SOURCE_LABELS = {
+  custom: "Custom",
   path: "PATH",
   local: "Native install",
   package: "Package manager",
@@ -34,8 +35,43 @@ export type AuthStatus =
       subscriptionType?: string;
     };
 
+/** Readable text for `CheckedLocation.reason` (docs/NATIVE_API.md, `claude_locate_report`). */
+const REJECTION_LABELS: Record<string, string> = {
+  not_executable: "Not a program that can be run",
+  timeout: "Did not answer within 10 seconds",
+  bad_output: "Did not report a Claude Code version",
+  spawn_failed: "Could not be started",
+};
+
+/** One line of the "what was checked" list: result plus reason. */
+export function describeCheck(check: CheckedLocation): string {
+  switch (check.result) {
+    case "ok":
+      return "Works";
+    case "missing":
+      return check.reason === "summarized" ? "Not found (summarized)" : "Not found";
+    case "rejected":
+      return check.reason ? (REJECTION_LABELS[check.reason] ?? `Rejected (${check.reason})`) : "Rejected";
+  }
+}
+
+/** Result of choosing the Claude Code executable by hand. */
+export type PickResult =
+  | { kind: "picked"; status: AuthStatus }
+  /** The user closed the file picker. */
+  | { kind: "cancelled" }
+  /** Not usable (`invalid_executable`: not a working Claude Code) or another error; `message` says why. */
+  | { kind: "failed"; message: string };
+
 export interface AuthService {
-  getStatus(): Promise<AuthStatus>;
+  /** `force`: re-discover Claude Code instead of using the cached location ("Check again"). */
+  getStatus(options?: { force?: boolean }): Promise<AuthStatus>;
+  /** Native file picker to choose the Claude Code executable; `null` when cancelled. Rejects with `invalid_executable`. */
+  pickExecutable(): Promise<AuthStatus | null>;
+  /** Back to automatic detection. */
+  clearExecutable(): Promise<AuthStatus>;
+  /** Every location checked for Claude Code. */
+  locateReport(): Promise<LocateReport>;
   /** Opens Claude Code's own sign-in in a visible console; resolves once it was launched (not when it finishes). */
   startLogin(): Promise<void>;
   logout(): Promise<void>;

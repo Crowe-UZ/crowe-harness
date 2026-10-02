@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claude-locate-report"
+description = "Enables the claude_locate_report command without any pre-configured scope."
+commands.allow = ["claude_locate_report"]
+
+[[permission]]
+identifier = "deny-claude-locate-report"
+description = "Denies the claude_locate_report command without any pre-configured scope."
+commands.deny = ["claude_locate_report"]

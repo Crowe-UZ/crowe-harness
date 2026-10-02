@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claude-clear-executable"
+description = "Enables the claude_clear_executable command without any pre-configured scope."
+commands.allow = ["claude_clear_executable"]
+
+[[permission]]
+identifier = "deny-claude-clear-executable"
+description = "Denies the claude_clear_executable command without any pre-configured scope."
+commands.deny = ["claude_clear_executable"]

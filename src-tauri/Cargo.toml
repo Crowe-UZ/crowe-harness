@@ -68,6 +68,8 @@ strip = "debuginfo"
 
 [target."cfg(windows)".dependencies]
 win32job = "2"
+# Fresh PATH / variables from HKCU and HKLM `Environment` (safe API, no unsafe here).
+winreg = "0.55"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Security_Cryptography",

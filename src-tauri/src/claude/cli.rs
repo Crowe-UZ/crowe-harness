@@ -22,11 +22,33 @@ pub const SCRUBBED_ENV: [&str; 3] = [
     "CLAUDE_CODE_OAUTH_TOKEN",
 ];
 
+/// `PATH` for a `claude` child process. On macOS/Linux: this process's
+/// `PATH`, then the login-shell `PATH` (when already resolved), then the
+/// directory of `exe` — so npm / nvm `#!/usr/bin/env node` launchers find
+/// `node` in a GUI app. `None` (inherit) on Windows.
+pub fn child_path(exe: &Path) -> Option<std::ffi::OsString> {
+    #[cfg(unix)]
+    {
+        use super::shell_env;
+        let process = std::env::var_os("PATH");
+        let login = shell_env::cached_login_shell_path();
+        shell_env::merge_paths(&[process.as_deref(), login.as_deref()], exe.parent())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = exe;
+        None
+    }
+}
+
 /// A `tokio` command for `exe` with the common hardening applied.
 pub fn command(exe: &Path) -> Command {
     let mut cmd = Command::new(exe);
     for key in SCRUBBED_ENV {
         cmd.env_remove(key);
+    }
+    if let Some(path) = child_path(exe) {
+        cmd.env("PATH", path);
     }
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);

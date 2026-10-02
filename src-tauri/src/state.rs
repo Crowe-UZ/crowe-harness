@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use crate::claude::finder::{ClaudeFinder, Discovery};
 use crate::claude::history::HistoryCache;
 use crate::claude::locate::home_dir;
 use crate::claude::turn::TurnRegistry;
@@ -25,13 +26,16 @@ pub struct Inner {
     pub registry: OpenedRegistry,
     pub turns: Arc<TurnRegistry>,
     pub installs: Arc<InstallRegistry>,
+    /// The `claude` executable to run (cache, manual override, discovery).
+    pub claude: Arc<ClaudeFinder>,
 }
 
 #[derive(Clone)]
 pub struct AppState(pub Arc<Inner>);
 
 impl AppState {
-    pub fn new(registry_file: Option<PathBuf>) -> Self {
+    /// `override_file`: where the user's manual Claude Code location is kept.
+    pub fn new(registry_file: Option<PathBuf>, override_file: Option<PathBuf>) -> Self {
         AppState(Arc::new(Inner {
             dirs: RwLock::new(ClaudeDirs::default()),
             history: HistoryCache::default(),
@@ -39,6 +43,7 @@ impl AppState {
             registry: OpenedRegistry::new(registry_file),
             turns: Arc::new(TurnRegistry::default()),
             installs: Arc::new(InstallRegistry::default()),
+            claude: Arc::new(ClaudeFinder::new(override_file, Discovery::real())),
         }))
     }
 }

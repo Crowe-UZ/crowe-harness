@@ -72,13 +72,17 @@ fn navigation_guard<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(navigation_guard())
-        // Used from Rust only (native folder picker in `projects_open_folder`);
+        // Used from Rust only (native pickers in `projects_open_folder` and
+        // `claude_pick_executable`);
         // the capability grants the webview no `dialog:*` permission.
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::claude_status,
             commands::claude_auth_login,
             commands::claude_auth_logout,
+            commands::claude_pick_executable,
+            commands::claude_clear_executable,
+            commands::claude_locate_report,
             commands::claude_install_plan,
             commands::claude_install_start,
             commands::claude_install_cancel,
@@ -101,7 +105,19 @@ pub fn run() {
                 .app_data_dir()
                 .ok()
                 .map(|dir| dir.join(REGISTRY_FILE));
-            app.manage(state::AppState::new(registry_file));
+            let override_file = app
+                .path()
+                .app_config_dir()
+                .ok()
+                .map(|dir| dir.join(claude::finder::OVERRIDE_FILE));
+            app.manage(state::AppState::new(registry_file, override_file));
+
+            // Resolve the login-shell PATH early (≤ 5 s, cached) so the first
+            // Claude Code check does not wait for the user's shell start-up.
+            #[cfg(unix)]
+            std::thread::spawn(|| {
+                let _ = claude::shell_env::login_shell_path();
+            });
 
             // The main window is declared in tauri.conf.json with
             // `"create": false` and built here, because `on_new_window` is only

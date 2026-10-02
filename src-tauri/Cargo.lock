@@ -692,6 +692,7 @@ dependencies = [
  "uuid",
  "win32job",
  "windows-sys 0.61.2",
+ "winreg",
 ]
 
 [[package]]

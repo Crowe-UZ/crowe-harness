@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claude-pick-executable"
+description = "Enables the claude_pick_executable command without any pre-configured scope."
+commands.allow = ["claude_pick_executable"]
+
+[[permission]]
+identifier = "deny-claude-pick-executable"
+description = "Denies the claude_pick_executable command without any pre-configured scope."
+commands.deny = ["claude_pick_executable"]

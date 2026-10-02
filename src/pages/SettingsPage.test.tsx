@@ -54,6 +54,7 @@ describe("Settings → Account", () => {
   });
 
   it.each([
+    ["custom", "Custom"],
     ["path", "PATH"],
     ["package", "Package manager"],
     ["desktop", "Claude desktop app"],
@@ -65,6 +66,74 @@ describe("Settings → Account", () => {
 
     expect(await screen.findByText(label)).toBeInTheDocument();
     expect(screen.getByText("/opt/homebrew/bin/claude")).toBeInTheDocument();
+  });
+});
+
+describe("Settings → Advanced → Claude Code location", () => {
+  it("chooses Claude Code by hand and confirms the result", async () => {
+    fakeNative().pickedExecutable = { ...fixtures.CUSTOM_INSTALL };
+    const { user } = await renderApp("/settings?tab=advanced");
+    await screen.findByText("Native install");
+    expect(screen.queryByRole("button", { name: "Use automatic detection" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Change…" }));
+
+    expect(await screen.findByText("Using Claude Code 2.1.284 (Custom)")).toBeInTheDocument();
+    expect(screen.getByText("D:\\Tools\\claude\\claude.exe")).toBeInTheDocument();
+    expect(screen.getByText("Custom")).toBeInTheDocument();
+    expect(screen.getByText(/You chose it by hand/)).toBeInTheDocument();
+  });
+
+  it("keeps the current Claude Code when the picker is cancelled", async () => {
+    const { user } = await renderApp("/settings?tab=advanced");
+    await screen.findByText("Native install");
+
+    await user.click(screen.getByRole("button", { name: "Change…" }));
+
+    expect(fakeNative().claudePickExecutable).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: "Change…" })).toBeInTheDocument();
+    expect(screen.getByText("Native install")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows why a chosen file cannot be used", async () => {
+    fakeNative().fail(
+      "claudePickExecutable",
+      "The selected file is not a working Claude Code: it is not a program that can be run (not_executable).",
+      "invalid_executable",
+    );
+    const { user } = await renderApp("/settings?tab=advanced");
+    await screen.findByText("Native install");
+
+    await user.click(screen.getByRole("button", { name: "Change…" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("not a program that can be run (not_executable)");
+    expect(screen.getByText("Native install")).toBeInTheDocument();
+  });
+
+  it("returns to automatic detection", async () => {
+    fakeNative().status = fixtures.subscriptionStatus({ install: { ...fixtures.CUSTOM_INSTALL } });
+    const { user } = await renderApp("/settings?tab=advanced");
+    expect(await screen.findByText("Custom")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use automatic detection" }));
+
+    expect(await screen.findByText("Using Claude Code 2.3.0 (Native install)")).toBeInTheDocument();
+    expect(fakeNative().claudeClearExecutable).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("C:\\Users\\dev\\.local\\bin\\claude.exe")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Use automatic detection" })).not.toBeInTheDocument();
+  });
+
+  it("reports a failure to return to automatic detection", async () => {
+    fakeNative().status = fixtures.subscriptionStatus({ install: { ...fixtures.CUSTOM_INSTALL } });
+    fakeNative().fail("claudeClearExecutable", "Claude Code location: Access is denied.", "io");
+    const { user } = await renderApp("/settings?tab=advanced");
+    await screen.findByText("Custom");
+
+    await user.click(screen.getByRole("button", { name: "Use automatic detection" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Access is denied.");
+    expect(screen.getByText("Custom")).toBeInTheDocument();
   });
 });
 

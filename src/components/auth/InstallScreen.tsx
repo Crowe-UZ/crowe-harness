@@ -4,6 +4,7 @@ import {
   CircleCheck,
   CircleX,
   Download,
+  FolderSearch,
   LoaderCircle,
   PackageSearch,
   RefreshCw,
@@ -11,13 +12,17 @@ import {
   ShieldCheck,
   UserCheck,
 } from "lucide-react";
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { CommandSnippet } from "@/components/common/CommandSnippet";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { describeCheck, INSTALL_SOURCE_LABELS } from "@/features/ai/auth";
+import { services } from "@/features/ai/services";
+import type { LocateReport } from "@/features/native/contract";
+import { errorMessage } from "@/lib/errors";
 import { isOneOf } from "@/lib/guards";
 import { formatMegabytes, formatSpeed, formatTimeLeft } from "@/lib/transfer";
 import { cn } from "@/lib/utils";
@@ -70,6 +75,7 @@ export function InstallScreen() {
 function NotFoundStep() {
   const error = useAuthStore((s) => s.error);
   const openConsent = useInstallStore((s) => s.openConsent);
+  const locate = useLocateManually();
   return (
     <GateLayout title="Claude Code not found" icon={PackageSearch}>
       <Lead>
@@ -83,12 +89,122 @@ function NotFoundStep() {
           Install Claude Code
         </Button>
         <CheckAgainButton />
+        <Button
+          variant="outline"
+          size="sm"
+          aria-disabled={locate.busy || undefined}
+          className="aria-disabled:opacity-50"
+          onClick={() => void locate.run()}
+        >
+          {locate.busy ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <FolderSearch data-icon="inline-start" />
+          )}
+          {locate.busy ? "Checking the file…" : "Locate Claude Code…"}
+        </Button>
       </div>
+      <InlineError message={locate.error} />
       <Lead className="text-xs">
-        The Claude desktop app also includes Claude Code — if it is installed, Crowe Harness can use it.
+        The Claude desktop app also includes Claude Code — if it is installed, Crowe Harness can use it. Installed
+        somewhere else? Use “Locate Claude Code…” to choose it.
       </Lead>
+      <WhatWasChecked />
       <OtherWaysToInstall />
     </GateLayout>
+  );
+}
+
+/** "Locate Claude Code…": native file picker (Rust side); on success the gate moves on by itself. */
+function useLocateManually() {
+  const pickExecutable = useAuthStore((s) => s.pickExecutable);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(undefined);
+    const result = await pickExecutable();
+    // On success the gate usually unmounts this screen; updating state afterwards is harmless.
+    setBusy(false);
+    if (result.kind === "failed") setError(result.message);
+  };
+  return { busy, error, run };
+}
+
+type ReportState =
+  { status: "loading" } | { status: "ready"; report: LocateReport } | { status: "error"; message: string };
+
+/** Collapsible diagnostics: every location checked (`claude_locate_report`), reloaded each time it opens. */
+function WhatWasChecked() {
+  const [state, setState] = useState<ReportState>({ status: "loading" });
+  const load = async () => {
+    setState({ status: "loading" });
+    try {
+      setState({ status: "ready", report: await services.auth.locateReport() });
+    } catch (error) {
+      setState({ status: "error", message: errorMessage(error) });
+    }
+  };
+
+  return (
+    <Collapsible
+      onOpenChange={(open) => {
+        if (open) void load();
+      }}
+    >
+      <DisclosureTrigger>Show what was checked</DisclosureTrigger>
+      <CollapsibleContent className="mt-2 space-y-2" aria-busy={state.status === "loading" || undefined}>
+        {state.status === "ready" ? (
+          <CheckedList report={state.report} />
+        ) : state.status === "error" ? (
+          <InlineError message={`Could not list the checked locations: ${state.message}`} />
+        ) : (
+          <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle className="size-4 animate-spin text-primary" aria-hidden="true" />
+            Checking every location…
+          </p>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function CheckedList({ report }: { report: LocateReport }) {
+  const { chosen, checked } = report;
+  return (
+    <>
+      {chosen ? (
+        <p role="status" className="text-sm">
+          Claude Code {chosen.version ? `${chosen.version} ` : ""}was found at{" "}
+          <code className="font-mono text-xs break-all">{chosen.path}</code>. Click Check again to continue.
+        </p>
+      ) : null}
+      <ul
+        aria-label="Locations checked"
+        className="max-h-64 space-y-1.5 overflow-auto rounded-md border bg-surface px-3 py-2 text-xs"
+      >
+        {checked.map((check, index) => (
+          <li key={`${index}-${check.path}`} className="flex gap-2">
+            {check.result === "ok" ? (
+              <CircleCheck className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden="true" />
+            ) : check.result === "rejected" ? (
+              <CircleX className="mt-0.5 size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+            ) : (
+              <span className="flex size-3.5 shrink-0 justify-center pt-1.5" aria-hidden="true">
+                <span className="size-1 rounded-full bg-muted-foreground/60" />
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="font-mono break-all">{check.path}</p>
+              <p className="text-muted-foreground">
+                {INSTALL_SOURCE_LABELS[check.source]} · {describeCheck(check)}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import type {
   InstallChannel,
   InstallEvent,
   InstallPlan,
+  LocateReport,
   McpServerInfo,
   NativeCommand,
   NativeError,
@@ -74,10 +75,24 @@ export interface TurnStartArgs {
 }
 
 /** One method per command in NATIVE_COMMANDS. Arguments are camelCase, exactly as in the contract. */
+export interface ClaudeStatusOptions {
+  /** Re-discover Claude Code instead of using the cached location ("Check again"). */
+  forceRefresh?: boolean;
+}
+
 export interface NativeClient {
-  claudeStatus(): Promise<ClaudeStatus>;
+  claudeStatus(options?: ClaudeStatusOptions): Promise<ClaudeStatus>;
   claudeAuthLogin(): Promise<void>;
   claudeAuthLogout(): Promise<void>;
+  /**
+   * Opens a native file picker (Rust side) to choose the Claude Code executable. Resolves with the
+   * new status, or `null` when the picker was cancelled; rejects with `invalid_executable`.
+   */
+  claudePickExecutable(): Promise<ClaudeStatus | null>;
+  /** Forgets the chosen executable and detects Claude Code automatically again. */
+  claudeClearExecutable(): Promise<ClaudeStatus>;
+  /** Every location checked for Claude Code and why candidates were rejected. */
+  claudeLocateReport(): Promise<LocateReport>;
   /** Resolves the version to install and verifies the signed release manifest (no binary download). */
   claudeInstallPlan(channel: InstallChannel): Promise<InstallPlan>;
   /**
@@ -115,9 +130,12 @@ async function call<T>(command: NativeCommand, args?: Record<string, unknown>): 
 
 /** The real client, backed by Tauri IPC. */
 export const tauriClient: NativeClient = {
-  claudeStatus: () => call<ClaudeStatus>("claude_status"),
+  claudeStatus: (options) => call<ClaudeStatus>("claude_status", { forceRefresh: options?.forceRefresh ?? false }),
   claudeAuthLogin: () => call<null>("claude_auth_login").then(() => undefined),
   claudeAuthLogout: () => call<null>("claude_auth_logout").then(() => undefined),
+  claudePickExecutable: () => call<ClaudeStatus | null>("claude_pick_executable"),
+  claudeClearExecutable: () => call<ClaudeStatus>("claude_clear_executable"),
+  claudeLocateReport: () => call<LocateReport>("claude_locate_report"),
   claudeInstallPlan: (channel) => call<InstallPlan>("claude_install_plan", { channel }),
   claudeInstallStart: (channel, onEvent) => {
     const events = new Channel<InstallEvent>(onEvent);

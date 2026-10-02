@@ -185,7 +185,7 @@ export const useInstallStore = create<InstallState>()((set, get) => ({
     // Show the success briefly, then re-check: the gate moves on to the sign-in screen by itself.
     await sleep(installTiming.successDelayMs);
     if (!isCurrent() || get().install.step !== "done") return;
-    await useAuthStore.getState().refresh();
+    await useAuthStore.getState().refresh({ force: true });
     if (!isCurrent()) return;
     const installed = get().install;
     if (installed.step !== "done") return;

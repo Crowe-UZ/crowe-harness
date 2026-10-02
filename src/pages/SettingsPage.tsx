@@ -1,4 +1,4 @@
-import { CircleCheck, KeyRound, LoaderCircle, RefreshCw } from "lucide-react";
+import { CircleCheck, FolderSearch, KeyRound, LoaderCircle, RefreshCw } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -18,7 +18,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { describeAuthStatus, INSTALL_SOURCE_LABELS, planLabel } from "@/features/ai/auth";
+import { describeAuthStatus, INSTALL_SOURCE_LABELS, planLabel, type AuthStatus } from "@/features/ai/auth";
 import { isPermissionMode, PERMISSION_MODE_LABELS, type PermissionMode } from "@/features/ai/types";
 import { isOneOf } from "@/lib/guards";
 import { isTheme, useTheme, type Theme } from "@/lib/theme";
@@ -354,15 +354,55 @@ function SecuritySettings() {
   );
 }
 
+function installOf(status: AuthStatus | undefined) {
+  return status?.state === "signed_in" || status?.state === "signed_out" ? status.install : undefined;
+}
+
+/** Toast text confirming which Claude Code is used now. */
+function usingText(status: AuthStatus): string {
+  const install = installOf(status);
+  if (!install) return "Claude Code was not found automatically";
+  const version = install.version ? ` ${install.version}` : "";
+  return `Using Claude Code${version} (${INSTALL_SOURCE_LABELS[install.source]})`;
+}
+
 function AdvancedSettings() {
   const status = useAuthStore((s) => s.status);
-  const install = status?.state === "signed_in" || status?.state === "signed_out" ? status.install : undefined;
+  const pickExecutable = useAuthStore((s) => s.pickExecutable);
+  const clearExecutable = useAuthStore((s) => s.clearExecutable);
+  const install = installOf(status);
+  const [busy, setBusy] = useState<"pick" | "clear" | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const change = async () => {
+    if (busy) return;
+    setBusy("pick");
+    setError(undefined);
+    const result = await pickExecutable();
+    setBusy(undefined);
+    if (result.kind === "failed") setError(result.message);
+    else if (result.kind === "picked") toast.success(usingText(result.status));
+  };
+
+  const restoreAutomatic = async () => {
+    if (busy) return;
+    setBusy("clear");
+    setError(undefined);
+    const result = await clearExecutable();
+    setBusy(undefined);
+    if (result.ok) toast.success(usingText(result.status));
+    else setError(result.message);
+  };
 
   return (
     <div className="space-y-6">
       <SettingsSection
         title="Claude Code"
-        description="The Claude Code installation Crowe Harness runs. It is detected automatically."
+        description={
+          install?.source === "custom"
+            ? "The Claude Code installation Crowe Harness runs. You chose it by hand."
+            : "The Claude Code installation Crowe Harness runs. It is detected automatically."
+        }
       >
         {install ? (
           <dl className="grid grid-cols-[10rem_1fr] gap-x-4 gap-y-2 px-4 py-3 text-sm">
@@ -376,6 +416,39 @@ function AdvancedSettings() {
         ) : (
           <p className="px-4 py-3 text-sm text-muted-foreground">Claude Code was not detected.</p>
         )}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-disabled={busy !== undefined || undefined}
+            className="aria-disabled:opacity-50"
+            onClick={() => void change()}
+          >
+            {busy === "pick" ? (
+              <LoaderCircle data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <FolderSearch data-icon="inline-start" />
+            )}
+            {busy === "pick" ? "Checking the file…" : "Change…"}
+          </Button>
+          {install?.source === "custom" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-disabled={busy !== undefined || undefined}
+              className="aria-disabled:opacity-50"
+              onClick={() => void restoreAutomatic()}
+            >
+              {busy === "clear" ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}
+              {busy === "clear" ? "Detecting…" : "Use automatic detection"}
+            </Button>
+          ) : null}
+        </div>
+        {error ? (
+          <p role="alert" className="px-4 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
       </SettingsSection>
       <SettingsSection title="Local data" description="What Crowe Harness keeps on this device.">
         <p className="px-4 py-3 text-sm text-muted-foreground">

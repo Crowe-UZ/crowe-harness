@@ -3,9 +3,12 @@
 
 pub mod auth;
 pub mod cli;
+pub mod finder;
 pub mod history;
 pub mod locate;
 pub mod mcp;
 pub mod records;
+pub mod shell_env;
 pub mod stream;
 pub mod turn;
+pub mod win_env;

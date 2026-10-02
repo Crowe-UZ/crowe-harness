@@ -49,9 +49,13 @@ describe("isDesktopRuntime", () => {
 
 describe("tauriClient", () => {
   it.each([
-    ["claudeStatus", [], "claude_status", undefined],
+    ["claudeStatus", [], "claude_status", { forceRefresh: false }],
+    ["claudeStatus", [{ forceRefresh: true }], "claude_status", { forceRefresh: true }],
     ["claudeAuthLogin", [], "claude_auth_login", undefined],
     ["claudeAuthLogout", [], "claude_auth_logout", undefined],
+    ["claudePickExecutable", [], "claude_pick_executable", undefined],
+    ["claudeClearExecutable", [], "claude_clear_executable", undefined],
+    ["claudeLocateReport", [], "claude_locate_report", undefined],
     ["claudeInstallPlan", ["latest"], "claude_install_plan", { channel: "latest" }],
     ["claudeInstallCancel", ["install-1"], "claude_install_cancel", { installId: "install-1" }],
     ["projectsList", [], "projects_list", undefined],

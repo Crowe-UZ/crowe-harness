@@ -4,13 +4,14 @@ Single source of truth for the Tauri commands that replace all mock data.
 TypeScript mirror: `src/features/native/contract.ts`. Rust: `src-tauri/src/**`.
 All JSON is camelCase (`#[serde(rename_all = "camelCase")]`). Errors are returned as
 `{ code: string, message: string }` (`NativeError`). Codes used by the Rust side:
-`invalid_argument`, `not_found`, `forbidden`, `claude_not_found`, `spawn_failed`, `timeout`, `cli_failed`,
-`too_many_turns`, `io`, `internal`. Messages are short and never contain internal paths.
+`invalid_argument`, `not_found`, `forbidden`, `claude_not_found`, `invalid_executable`, `spawn_failed`, `timeout`,
+`cli_failed`, `too_many_turns`, `io`, `internal`. Messages are short and never contain internal paths.
 
 Security rules (see SPEC §D, "Security rules for native commands"):
 
 - The webview never sends filesystem paths or executable paths. It sends **ids**; Rust resolves ids to paths it
-  owns (Claude Code history directory, the app's own project registry) and canonicalizes them.
+  owns (Claude Code history directory, the app's own project registry) and canonicalizes them. Paths the user
+  chooses come from native pickers opened by Rust (`projects_open_folder`, `claude_pick_executable`).
 - Claude credentials are never read: Rust never opens `~/.claude/.credentials.json`, `~/.claude/sessions/*`,
   `~/.claude.json`. Only `~/.claude/projects/**` (transcripts + subagent meta), `~/.claude/agents`,
   `~/.claude/skills` and project `.claude/{agents,skills}` are read.
@@ -21,15 +22,18 @@ Security rules (see SPEC §D, "Security rules for native commands"):
 
 | Command | Args | Returns |
 |---|---|---|
-| `claude_status` | – | `ClaudeStatus` |
+| `claude_status` | `{ forceRefresh?: boolean }` | `ClaudeStatus` — uses the cached location; `forceRefresh: true` ("Check again") re-discovers |
 | `claude_auth_login` | – | `null` — opens a visible console running `claude auth login --claudeai` (CREATE_NEW_CONSOLE) |
 | `claude_auth_logout` | – | `null` — runs `claude auth logout` |
+| `claude_pick_executable` | – | `ClaudeStatus \| null` — native file picker (Rust side); `null` when cancelled; rejects with `invalid_executable` |
+| `claude_clear_executable` | – | `ClaudeStatus` — forgets the manual location and re-discovers |
+| `claude_locate_report` | – | `LocateReport` — diagnostics: every location checked (validates every candidate) |
 
 `ClaudeStatus`:
 
 ```ts
 {
-  install: { path: string; version: string | null; source: "path" | "local" | "package" | "desktop" } | null;
+  install: { path: string; version: string | null; source: "custom" | "path" | "local" | "package" | "desktop" } | null;
   loggedIn: boolean;
   authMethod: string | null;        // raw value from `claude auth status`
   subscription: boolean;            // true only for Claude subscription sign-in (claude.ai), false for console/API key
@@ -39,14 +43,80 @@ Security rules (see SPEC §D, "Security rules for native commands"):
 }
 ```
 
-Locating `claude` (first hit wins, executables only — never `.cmd`/`.bat` shims):
-1. `PATH` (`claude` / `claude.exe`)
-2. native install launcher: `~/.local/bin/claude` (macOS/Linux), `%USERPROFILE%\.local\bin\claude.exe` (Windows)
-3. package-manager locations GUI apps may not see on PATH: `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`,
-   `/home/linuxbrew/.linuxbrew/bin/claude`, `/usr/bin/claude`; Windows WinGet links `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`
-4. binary bundled with the Claude desktop app: `%APPDATA%\Claude\claude-code\<highest semver>\claude.exe`
+`LocateReport`:
 
-`install.source`: `"path" | "local" | "package" | "desktop"`.
+```ts
+{
+  chosen: ClaudeInstall | null;     // the install that would run (first candidate that validates)
+  checked: {
+    path: string;                   // home directory shown as "~"; wildcards as "*"
+    source: "custom" | "path" | "local" | "package" | "desktop";
+    result: "ok" | "missing" | "rejected";
+    reason?: "not_executable" | "timeout" | "bad_output" | "spawn_failed" | "summarized";
+  }[];                              // priority order, at most 60 entries
+}
+```
+
+### Locating `claude`
+
+Candidates, highest priority first. Executables only — never `.cmd` / `.bat` / `.ps1` (for an npm shim on Windows
+the package's native `node_modules\@anthropic-ai\claude-code\bin\claude.exe` is used); relative directories are
+never resolved; candidates are deduplicated by canonical path (first source wins).
+
+1. `custom` — the file chosen with `claude_pick_executable` (persisted in `<app config dir>/claude-code.json`).
+2. `path` — this process's `PATH`.
+3. `path` — a fresh `PATH`: Windows reads `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\Path`
+   then `HKCU\Environment\Path` (`REG_EXPAND_SZ` expanded; lookup user registry → system registry → process env;
+   unknown `%VAR%` kept), so Claude Code installed after the app / Explorer started is found. macOS/Linux run the
+   user's `$SHELL` (absolute, and in `/etc/shells` or one of zsh, bash, fish, sh) as `-ilc` (fish: `-lc` with
+   `string join : $PATH`) printing `PATH` between unique markers — stdin null, 5 s timeout, output outside the markers
+   ignored, resolved once per app run (started in the background at launch), like VS Code's `resolveShellEnv`.
+   Registry variables missing from the process environment (e.g. `PNPM_HOME`, `NVM_SYMLINK`) feed step 5.
+4. `local` — native installer: `~/.local/bin/claude[.exe]`; macOS/Linux also the legacy `~/.claude/local/claude`.
+5. `package` — package managers:
+   - Windows: `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`,
+     `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Anthropic.ClaudeCode_*\[*\]claude.exe`,
+     Scoop `(%SCOOP% or ~\scoop)\shims\claude.exe` and `\apps\claude-code\current\claude.exe`,
+     Chocolatey `(%ChocolateyInstall% or %ProgramData%\chocolatey)\bin\claude.exe`,
+     npm global `%APPDATA%\npm` and the `prefix=` of `~\.npmrc` → `node_modules\@anthropic-ai\claude-code\bin\claude.exe`,
+     pnpm `(%PNPM_HOME% or %LOCALAPPDATA%\pnpm)\global\*\node_modules\@anthropic-ai\claude-code\bin\claude.exe`,
+     Volta `%LOCALAPPDATA%\Volta\bin` and `~\.volta\bin`, nvm-windows
+     `%NVM_SYMLINK%\node_modules\@anthropic-ai\claude-code\bin\claude.exe`, Bun `~\.bun\bin\claude.exe`.
+   - macOS: `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`; Linux: `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`,
+     `~/.linuxbrew/bin`, `/usr/bin`, `/snap/bin`; both: `~/.npm-global/bin`, `<~/.npmrc prefix>/bin`, `~/.volta/bin`,
+     `~/.bun/bin`, the highest `~/.nvm/versions/node/v*/bin`, `$PNPM_HOME`, `~/Library/pnpm` (macOS),
+     `~/.local/share/pnpm`.
+6. `desktop` — binary bundled with the Claude desktop app: Windows `%APPDATA%\Claude\claude-code\<version>\claude.exe`
+   and the MSIX location `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude-code\<version>\claude.exe`;
+   macOS `~/Library/Application Support/Claude/claude-code/<version>/claude` (**UNCONFIRMED** layout, mirrors Windows).
+
+Within one wildcard the highest semantic version is tried first (at most 3 files per location). Work is bounded:
+at most 40 existing candidates, 512 entries read and 8 children followed per wildcard, no recursive scans.
+
+Validation: candidates are tried in order; the first whose `<exe> --version` (10 s timeout, no shell, no console
+window, stdin null, API-key variables removed) prints a semantic version as its first token and the text
+"Claude Code" (any case, e.g. `2.1.284 (Claude Code)`) is chosen. Rejection reasons: `not_executable` (not an
+`.exe` on Windows / no execute bit on Unix / the OS refuses to run it), `timeout`, `bad_output`, `spawn_failed`.
+
+Caching: the chosen install is kept for the app lifetime. `claude_status`, sign-in, turns, `mcp_list` and the
+installer plan use it; discovery runs again when nothing is cached, when the cached file no longer exists, on
+`claude_status { forceRefresh: true }`, after a successful in-app install and on `claude_clear_executable`
+(the registry is re-read each time; the login-shell `PATH` is reused). Discoveries are serialized.
+
+Manual override (`claude_pick_executable`): the file must be absolute, not a `.cmd`/`.bat`/`.ps1`, on Windows named
+`claude.exe`, not on a network (UNC) location, and must validate as above; then it is persisted and becomes the
+`custom` install. Otherwise the command rejects with `invalid_executable` and a message ending in the reason code,
+e.g. `"…: it did not report a Claude Code version (bad_output)."`; nothing is persisted. A persisted override that
+no longer validates is skipped (reported as `custom` `missing` / `rejected` in `claude_locate_report`), never fatal.
+
+Diagnostics (`claude_locate_report`): runs a fresh discovery that validates every candidate (it also refreshes the
+cache). Missing locations beyond the 60-entry limit are summarized per source as `"N more locations"` with reason
+`"summarized"`.
+
+Child processes on macOS/Linux: every `claude` spawn (status, sign-in, turns, `mcp list`, validation, the
+installer) gets `PATH` = this process's `PATH` + the login-shell `PATH` + the directory of the executable,
+deduplicated, relative entries dropped — so npm / nvm `#!/usr/bin/env node` launchers work in a GUI app. Windows
+children inherit the process environment.
 
 ## Installing Claude Code (in-app, native installer replicated in Rust)
 
@@ -126,10 +196,12 @@ Notes (installer implementation):
   official installer's behaviour.
 
 Notes (implementation):
-- `claude_status` returns `install: null` (and `loggedIn: false`) when `claude` is not found; it rejects with
+- `claude_status` returns `install: null` (and `loggedIn: false`) when no candidate validates; it rejects with
   `timeout` / `spawn_failed` / `cli_failed` when the CLI cannot be run or its status JSON cannot be read.
-  `install.path` is the canonical path (for the desktop app this is the MSIX-redirected location under
-  `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\...`).
+  `install.path` is the canonical path on Windows (for the desktop app this is the MSIX-redirected location under
+  `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\...`) and the path as found on macOS/Linux (a launcher
+  symlink keeps working across updates). `install.version` is re-read with `--version` on every status call
+  (falls back to the version seen at validation).
 - `subscription` is `true` only when `loggedIn` and the auth method is a claude.ai/OAuth sign-in (or unknown with a
   `subscriptionType`); Console / API key / Bedrock / Vertex are never a subscription.
 - `claude_auth_login` returns as soon as the console is spawned; poll `claude_status` until `loggedIn`.

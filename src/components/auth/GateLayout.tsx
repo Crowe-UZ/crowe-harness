@@ -80,7 +80,7 @@ export function InlineError({ message }: { message: string | undefined }) {
   );
 }
 
-/** "Check again" that keeps focus while busy (aria-disabled instead of disabled). */
+/** "Check again": re-discovers Claude Code; keeps focus while busy (aria-disabled instead of disabled). */
 export function CheckAgainButton({ variant = "outline" }: { variant?: "outline" | "default" }) {
   const checking = useAuthStore((s) => s.checking);
   const refresh = useAuthStore((s) => s.refresh);
@@ -91,7 +91,7 @@ export function CheckAgainButton({ variant = "outline" }: { variant?: "outline" 
       aria-disabled={checking || undefined}
       className="aria-disabled:opacity-50"
       onClick={() => {
-        if (!checking) void refresh();
+        if (!checking) void refresh({ force: true });
       }}
     >
       {checking ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}
