@@ -7,6 +7,7 @@ pub mod config;
 pub mod error;
 pub mod fs;
 pub mod guard;
+pub mod installer;
 pub mod projects;
 pub mod state;
 pub mod util;
@@ -78,6 +79,9 @@ pub fn run() {
             commands::claude_status,
             commands::claude_auth_login,
             commands::claude_auth_logout,
+            commands::claude_install_plan,
+            commands::claude_install_start,
+            commands::claude_install_cancel,
             commands::projects_list,
             commands::projects_open_folder,
             commands::sessions_list,
@@ -126,9 +130,12 @@ pub fn run() {
         .expect("error while building Crowe Harness")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                // Closing every job handle kills each turn's process tree.
+                // Closing every job handle kills each turn's process tree;
+                // a running install is cancelled (its installer process tree
+                // dies with its Job Object when the app exits).
                 if let Some(state) = app.try_state::<state::AppState>() {
                     state.0.turns.kill_all();
+                    state.0.installs.cancel_all();
                 }
             }
         });

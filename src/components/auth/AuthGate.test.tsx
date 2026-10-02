@@ -32,15 +32,13 @@ describe("AuthGate", () => {
     expect(fakeNative().claudeStatus).not.toHaveBeenCalled();
   });
 
-  it("explains how to install Claude Code and checks again", async () => {
+  it("offers to install Claude Code when it is missing and checks again", async () => {
     fakeNative().status = fixtures.notInstalledStatus();
     const { user } = await renderApp("/");
 
-    await gateHeading("Install Claude Code");
-    expect(screen.getByText("winget install Anthropic.ClaudeCode")).toBeInTheDocument();
-    expect(screen.getByText("https://code.claude.com/docs")).toBeInTheDocument();
-    expect(screen.getByText(/Claude desktop app also includes Claude Code/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy install command" })).toBeInTheDocument();
+    expect(await gateHeading("Claude Code not found")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Install Claude Code" })).toBeInTheDocument();
+    expect(shell()).not.toBeInTheDocument();
 
     fakeNative().status = fixtures.subscriptionStatus();
     await user.click(screen.getByRole("button", { name: "Check again" }));

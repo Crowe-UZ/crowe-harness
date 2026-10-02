@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claude-install-plan"
+description = "Enables the claude_install_plan command without any pre-configured scope."
+commands.allow = ["claude_install_plan"]
+
+[[permission]]
+identifier = "deny-claude-install-plan"
+description = "Denies the claude_install_plan command without any pre-configured scope."
+commands.deny = ["claude_install_plan"]

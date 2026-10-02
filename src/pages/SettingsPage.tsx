@@ -18,7 +18,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { describeAuthStatus, planLabel } from "@/features/ai/auth";
+import { describeAuthStatus, INSTALL_SOURCE_LABELS, planLabel } from "@/features/ai/auth";
 import { isPermissionMode, PERMISSION_MODE_LABELS, type PermissionMode } from "@/features/ai/types";
 import { isOneOf } from "@/lib/guards";
 import { isTheme, useTheme, type Theme } from "@/lib/theme";
@@ -354,12 +354,6 @@ function SecuritySettings() {
   );
 }
 
-const INSTALL_SOURCE = {
-  path: "Found on PATH",
-  desktop: "Bundled with the Claude desktop app",
-  local: "Local install (~/.local/bin)",
-} as const;
-
 function AdvancedSettings() {
   const status = useAuthStore((s) => s.status);
   const install = status?.state === "signed_in" || status?.state === "signed_out" ? status.install : undefined;
@@ -377,7 +371,7 @@ function AdvancedSettings() {
             <dt className="text-muted-foreground">Location</dt>
             <dd className="font-mono text-xs leading-5 break-all">{install.path}</dd>
             <dt className="text-muted-foreground">Source</dt>
-            <dd>{INSTALL_SOURCE[install.source]}</dd>
+            <dd>{INSTALL_SOURCE_LABELS[install.source]}</dd>
           </dl>
         ) : (
           <p className="px-4 py-3 text-sm text-muted-foreground">Claude Code was not detected.</p>

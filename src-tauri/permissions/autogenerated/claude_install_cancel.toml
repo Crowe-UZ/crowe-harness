@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-claude-install-cancel"
+description = "Enables the claude_install_cancel command without any pre-configured scope."
+commands.allow = ["claude_install_cancel"]
+
+[[permission]]
+identifier = "deny-claude-install-cancel"
+description = "Denies the claude_install_cancel command without any pre-configured scope."
+commands.deny = ["claude_install_cancel"]

@@ -2,9 +2,14 @@ import { vi } from "vitest";
 import { NativeCallError, type NativeClient, type TurnStartArgs } from "@/features/native/client";
 import type {
   AgentInfo,
+  ClaudeInstall,
   ClaudeStatus,
   DirEntry,
   FileContent,
+  InstallChannel,
+  InstallEvent,
+  InstallPhase,
+  InstallPlan,
   McpServerInfo,
   ProjectInfo,
   SessionInfo,
@@ -40,6 +45,64 @@ export class FakeTurn {
   }
 }
 
+/**
+ * One `claude_install_start` call. The test pushes `InstallEvent`s into it like the Rust channel
+ * would, or sets `FakeNativeClient.installScript` to have them emitted automatically.
+ */
+export class FakeInstall {
+  cancelled = false;
+  finished = false;
+
+  constructor(
+    readonly id: string,
+    readonly channel: InstallChannel,
+    private readonly onEvent: (event: InstallEvent) => void,
+    private readonly onDone: (install: ClaudeInstall) => void,
+  ) {}
+
+  emit(...events: InstallEvent[]): void {
+    for (const event of events) {
+      if (this.finished) throw new Error(`FakeInstall ${this.id}: event after the install ended`);
+      if (event.type === "done" || event.type === "error" || event.type === "cancelled") this.finished = true;
+      if (event.type === "done") this.onDone(event.install);
+      this.onEvent(event);
+    }
+  }
+
+  phase(phase: InstallPhase): void {
+    this.emit({ type: "phase", phase });
+  }
+
+  progress(receivedBytes: number, totalBytes: number): void {
+    this.emit({ type: "progress", receivedBytes, totalBytes });
+  }
+
+  /** Ends the install successfully; Claude Code is then found (signed out) by `claude_status`. */
+  done(install: ClaudeInstall = { ...fixtures.INSTALL }): void {
+    this.emit({ type: "done", install });
+  }
+
+  fail(code: string, message = "Install failed"): void {
+    this.emit({ type: "error", code, message });
+  }
+}
+
+/** A full successful install: every phase, download progress, then `done`. */
+export function successfulInstallScript(totalBytes = 104_857_600): InstallEvent[] {
+  return [
+    { type: "phase", phase: "resolving" },
+    { type: "phase", phase: "verifying_manifest" },
+    { type: "phase", phase: "downloading" },
+    { type: "progress", receivedBytes: 0, totalBytes },
+    { type: "progress", receivedBytes: totalBytes / 2, totalBytes },
+    { type: "progress", receivedBytes: totalBytes, totalBytes },
+    { type: "phase", phase: "verifying_binary" },
+    { type: "phase", phase: "installing" },
+    { type: "phase", phase: "checking" },
+    { type: "done", install: { ...fixtures.INSTALL } },
+  ];
+}
+
 type Method = keyof NativeClient;
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -73,6 +136,17 @@ export class FakeNativeClient implements NativeClient {
   readonly turns: FakeTurn[] = [];
   /** Emit `exit` when a turn is cancelled (the process is killed). */
   exitOnCancel = true;
+  /** What `claude_install_plan` returns per channel. */
+  installPlans: Record<InstallChannel, InstallPlan> = {
+    stable: fixtures.installPlan("stable"),
+    latest: fixtures.installPlan("latest"),
+  };
+  /** Installs started so far, oldest first. */
+  readonly installs: FakeInstall[] = [];
+  /** When set, every started install emits these events on its own (after `claude_install_start` resolved). */
+  installScript: InstallEvent[] | null = null;
+  /** Emit `cancelled` when a running install is cancelled. */
+  cancelInstallOnRequest = true;
   private readonly failures = new Map<Method, NativeCallError>();
 
   /** Makes `method` reject with a NativeError until `recover(method)`. */
@@ -82,6 +156,10 @@ export class FakeNativeClient implements NativeClient {
 
   recover(method: Method): void {
     this.failures.delete(method);
+  }
+
+  get lastInstall(): FakeInstall | undefined {
+    return this.installs.at(-1);
   }
 
   get lastTurn(): FakeTurn | undefined {
@@ -114,6 +192,40 @@ export class FakeNativeClient implements NativeClient {
     settle((): void => {
       this.guard("claudeAuthLogout");
       this.status = fixtures.signedOutStatus();
+    }),
+  );
+
+  readonly claudeInstallPlan = vi.fn(
+    settle((channel: InstallChannel): InstallPlan => {
+      this.guard("claudeInstallPlan");
+      return clone(this.installPlans[channel]);
+    }),
+  );
+
+  readonly claudeInstallStart = vi.fn(
+    settle((channel: InstallChannel, onEvent: (event: InstallEvent) => void): string => {
+      this.guard("claudeInstallStart");
+      const install = new FakeInstall(`install-${this.installs.length + 1}`, channel, onEvent, (installed) => {
+        this.status = { ...fixtures.signedOutStatus(), install: clone(installed) };
+      });
+      this.installs.push(install);
+      const script = this.installScript;
+      if (script) {
+        setTimeout(() => {
+          for (const event of script) if (!install.finished) install.emit(clone(event));
+        }, 0);
+      }
+      return install.id;
+    }),
+  );
+
+  readonly claudeInstallCancel = vi.fn(
+    settle((installId: string): void => {
+      this.guard("claudeInstallCancel");
+      const install = this.installs.find((i) => i.id === installId);
+      if (!install || install.finished) return; // no-op for unknown or finished ids, like Rust
+      install.cancelled = true;
+      if (this.cancelInstallOnRequest) install.emit({ type: "cancelled" });
     }),
   );
 

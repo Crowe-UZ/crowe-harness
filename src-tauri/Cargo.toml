@@ -4,9 +4,10 @@ version = "0.1.0"
 description = "Crowe Harness — desktop AI development workspace"
 authors = ["Crowe"]
 edition = "2021"
-# MSRV. Tauri 2 itself requires >= 1.77.2; 1.85 is the oldest toolchain we
-# support (the pinned toolchain in rust-toolchain.toml is `stable`).
-rust-version = "1.85"
+# MSRV. Tauri 2 itself requires >= 1.77.2; `pgp` 0.20 (installer manifest
+# signature) requires 1.88, the oldest toolchain we support (the pinned
+# toolchain in rust-toolchain.toml is `stable`).
+rust-version = "1.88"
 license = "UNLICENSED"
 publish = false
 
@@ -31,11 +32,22 @@ semver = "1"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2"
-tokio = { version = "1", features = ["process", "io-util", "rt", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["process", "io-util", "rt", "time", "sync", "macros", "fs"] }
 memchr = "2"
+# In-app Claude Code installer (src/installer). HTTPS via rustls with the
+# `ring` provider (pure Rust + asm, builds on MSVC without OpenSSL/cmake) and
+# the OS certificate store (rustls-platform-verifier, pulled in by reqwest).
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# Pure-Rust OpenPGP (detached signature over the release manifest).
+pgp = { version = "0.20", default-features = false }
+subtle = "2"
 
 [lints.rust]
-unsafe_code = "forbid"
+# `deny` (not `forbid`) so that the single FFI module
+# `installer/sys_windows.rs` can opt in with `#![allow(unsafe_code)]`
+# (WinVerifyTrust, IsWow64Process2, GetDiskFreeSpaceExW). Nothing else may.
+unsafe_code = "deny"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -56,6 +68,16 @@ strip = "debuginfo"
 
 [target."cfg(windows)".dependencies]
 win32job = "2"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_Security_WinTrust",
+  "Win32_Storage_FileSystem",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tempfile = "3"

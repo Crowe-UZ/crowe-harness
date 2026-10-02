@@ -30,10 +30,10 @@ On macOS and Linux, follow the [Tauri prerequisites](https://v2.tauri.app/start/
 
 To use the app you also need:
 
-| Requirement         | Details                                                                                                                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code         | `winget install Anthropic.ClaudeCode` or another method from [code.claude.com/docs](https://code.claude.com/docs). The copy bundled with the Claude desktop app is detected too. |
-| Claude subscription | Pro, Max, Team or Enterprise. Console accounts and API keys are **not** accepted: the app stays locked behind the sign-in screen.                                                |
+| Requirement         | Details                                                                                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code         | Can be installed from inside the app (see [Installing Claude Code](#installing-claude-code)). An existing install on `PATH`, the native installer (`~/.local/bin`), WinGet/Homebrew, or the copy bundled with the Claude desktop app is detected too. |
+| Claude subscription | Pro, Max, Team or Enterprise. Console accounts and API keys are **not** accepted: the app stays locked behind the sign-in screen.                                                                                                                     |
 
 ## Signing in
 
@@ -41,8 +41,20 @@ Crowe Harness never sees your Claude credentials. It only reads the sign-in stat
 
 1. On start, the app runs `claude auth status` (through Rust) and shows a sign-in screen until Claude Code is signed in **with a Claude subscription**. The sidebar and pages are not reachable before that.
 2. **Sign in with Claude** opens a console window running `claude auth login --claudeai`; Claude Code continues in your browser. The app checks the status every 2 seconds (for up to 10 minutes, cancellable) and opens as soon as sign-in completes.
-3. If Claude Code is missing, the screen shows the install command and a **Check again** button. If Claude Code is signed in with a Console account or API key, the screen explains that a subscription is required and offers **Sign out**.
+3. If Claude Code is missing, the screen offers **Install Claude Code** (see below), lists the official install commands under **Other ways to install**, and has a **Check again** button. If Claude Code is signed in with a Console account or API key, the screen explains that a subscription is required and offers **Sign out**.
 4. The status is re-checked whenever the window regains focus and every 5 minutes. Signing out — in **Settings → Account** (with confirmation) or with `claude auth logout` in a terminal — returns the app to the sign-in screen.
+
+## Installing Claude Code
+
+When Claude Code is not found, **Install Claude Code** installs it without a terminal and without administrator rights:
+
+1. **Consent.** The app shows the version, download size, source (`downloads.claude.ai`) and install location before anything is downloaded, and lets you pick the release channel (**Stable**, recommended, or **Latest**). Nothing is installed until you click **Install**.
+2. **Verification.** The Rust core replicates the official `install.ps1` / `install.sh` instead of piping a remote script into a shell: it fetches the release manifest and checks its OpenPGP signature against Anthropic's release key embedded in the app (pinned fingerprint), downloads the binary over HTTPS from `downloads.claude.ai` only, compares its SHA-256 with the signed manifest, and on Windows and macOS also checks that the program is code-signed by Anthropic. If any check fails, the download is deleted and nothing is installed.
+3. **Install.** The verified binary runs Claude Code's own `claude install <channel>`, which places the launcher in `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows) and keeps Claude Code updated automatically. The app never elevates and never changes `PATH`.
+4. **Progress.** Each step (checking the version, verifying the signature, downloading, verifying the download, installing, checking the installation) is shown with download progress, speed and time left; the install can be cancelled at any time.
+5. When it finishes, the app re-checks Claude Code and continues to the sign-in screen. Errors explain what to do (connection or proxy problems, region blocks, failed verification, disk space) and offer **Try again** and **Other ways to install** (the official commands for your OS, ready to copy).
+
+**Settings → Advanced** shows the Claude Code the app runs: version, location and how it was found (PATH, native install, package manager or Claude desktop app). The installer's command contract is in [docs/NATIVE_API.md](docs/NATIVE_API.md).
 
 Opening the UI in a plain browser (`pnpm dev`) only shows an "Open Crowe Harness desktop app" screen: all data comes from the Rust core, which exists only in the desktop app.
 
@@ -75,7 +87,7 @@ pnpm lint:rust      # cargo fmt --check + cargo clippy --all-targets -D warnings
 | `pnpm format` / `pnpm format:check` | Prettier write / check                                                                                                           |
 | `pnpm build`                        | Type-check and build the frontend into `dist/`                                                                                   |
 
-Tests live next to the code (`*.test.ts(x)`); shared helpers are in `src/test/` (`renderApp`, a controllable `matchMedia`). Tests run the real service implementations against `FakeNativeClient` (`src/test/fakes/`), an in-memory stand-in for the Rust commands with fixture data, failure injection and scriptable turns (`turn.emit(...)`, `turn.exit()`). Every test starts with a fresh fake, fresh stores, empty storage and zero-delay sign-in polling. Fakes and fixtures are never imported by application code.
+Tests live next to the code (`*.test.ts(x)`); shared helpers are in `src/test/` (`renderApp`, a controllable `matchMedia`). Tests run the real service implementations against `FakeNativeClient` (`src/test/fakes/`), an in-memory stand-in for the Rust commands with fixture data, failure injection and scriptable turns (`turn.emit(...)`, `turn.exit()`) and installs (`install.phase(...)`, `install.progress(...)`, `install.done()`, or a whole `installScript`). Every test starts with a fresh fake, fresh stores, empty storage and zero-delay sign-in polling. Fakes and fixtures are never imported by application code.
 
 ## Build
 
@@ -93,7 +105,7 @@ src/
   layouts/AppLayout.tsx      top bar, sidebar, workspace, status bar
   pages/                     Home, Projects, Project (Chat/Files), Agents, Skills, MCP, Settings, 404
   components/
-    auth/                    AuthGate (mandatory sign-in screens)
+    auth/                    AuthGate (mandatory sign-in screens), InstallScreen (in-app Claude Code install)
     layout/                  TopBar, StatusBar, ThemeProvider, CommandPalette, Logo
     sidebar/                 AppSidebar (projects, chats, nested agent chats; Ctrl+B)
     chat/                    ChatView, AgentChatView, tool cards, composer, notices
@@ -106,7 +118,7 @@ src/
     ai/                      AIProvider + AuthService contracts, Claude Code implementations, services.ts
     history/ workspace/ config/   HistoryService, FsService, ConfigService and native implementations
     chat/                    view model shared by stored transcripts and live turns
-  stores/                    Zustand: auth, projects and sessions (caches), chat (live turns), settings (persisted), ui
+  stores/                    Zustand: auth, install (in-app installer flow), projects and sessions (caches), chat (live turns), settings (persisted), ui
   data/                      domain type aliases
   lib/                       utils, theme, time helpers
   test/                      setup, renderApp, fakes/ (FakeNativeClient and fixtures)
@@ -119,8 +131,8 @@ docs/                        SPEC.md, ROADMAP.md, NATIVE_API.md (command contrac
 
 ```
 UI (pages, components, stores)
-  → services: AIProvider · AuthService · HistoryService · FsService · ConfigService   (interfaces)
-    → ClaudeCodeProvider, ClaudeCodeAuthService, Native*Service                      (src/features/**)
+  → services: AIProvider · AuthService · ClaudeInstallerService · HistoryService · FsService · ConfigService   (interfaces)
+    → ClaudeCodeProvider, ClaudeCodeAuthService, ClaudeCodeInstallerService, Native*Service (src/features/**)
       → NativeClient (src/features/native/client.ts: invoke + Channel)
         → Rust core (src-tauri) → installed Claude Code CLI → Anthropic
 ```
@@ -135,6 +147,7 @@ UI (pages, components, stores)
 
 - No credentials, API keys or tokens are stored in this repository or by the app. The frontend never receives tokens: Rust returns only the sign-in status fields (logged in, method, plan, email, organization).
 - Claude sign-in goes through Claude Code's own flow (`claude auth login`). Crowe Harness never reads Claude credential files.
+- The in-app Claude Code installer downloads only from `downloads.claude.ai` over HTTPS, verifies the release manifest's signature against Anthropic's pinned release key and the binary's SHA-256 (plus the OS code signature on Windows and macOS) before running anything, and never asks for administrator rights. See [Installing Claude Code](#installing-claude-code).
 - The webview sends ids, never paths or command lines; Rust resolves and guards every path (see [docs/NATIVE_API.md](docs/NATIVE_API.md)).
 - Secrets added later (for example MCP server tokens) go to the OS keychain.
 - No telemetry.

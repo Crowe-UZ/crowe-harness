@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::claude::auth::{parse_auth_status, ClaudeInstall, ClaudeStatus};
 use crate::claude::cli;
@@ -18,6 +18,7 @@ use crate::claude::turn::{self, PermissionMode, TurnSpec};
 use crate::config::{self, AgentInfo, SkillInfo};
 use crate::error::{join_blocking, NativeError, NativeResult};
 use crate::fs::{self as wfs, DirEntry, FileContent};
+use crate::installer::{self, Cancel, InstallChannel, InstallDirs, InstallEvent, InstallPlan};
 use crate::projects::{self, ProjectInfo};
 use crate::state::{AppState, ClaudeDirs};
 use crate::util::display_path;
@@ -122,6 +123,99 @@ pub async fn claude_auth_logout() -> NativeResult<()> {
             ),
         ))
     }
+}
+
+// ---------------------------------------------------------------- Claude Code installer
+
+/// Current install (if any) with its version, for `InstallPlan.alreadyInstalled`.
+async fn current_install() -> Option<ClaudeInstall> {
+    let loc = join_blocking(|| Ok(locate::locate()))
+        .await
+        .ok()
+        .flatten()?;
+    let version = cli::run(&loc.exe, &["--version"], STATUS_TIMEOUT)
+        .await
+        .ok()
+        .and_then(|o| locate::parse_version(&o.stdout))
+        .or(loc.dir_version.clone());
+    Some(ClaudeInstall {
+        path: display_path(&loc.exe),
+        version,
+        source: loc.source,
+    })
+}
+
+fn home_or_err() -> NativeResult<PathBuf> {
+    locate::home_dir()
+        .filter(|h| h.is_absolute())
+        .ok_or_else(|| NativeError::internal("the home directory is unknown"))
+}
+
+/// Resolves the channel and verifies the signed manifest (no binary download).
+#[tauri::command]
+pub async fn claude_install_plan(channel: InstallChannel) -> NativeResult<InstallPlan> {
+    let home = home_or_err()?;
+    let cancel = Cancel::never();
+    let (release, already_installed) =
+        tokio::join!(installer::plan_release(channel, &cancel), current_install());
+    let release = release?;
+    Ok(InstallPlan {
+        version: release.version,
+        channel,
+        platform: release.platform.to_owned(),
+        size_bytes: release.entry.size,
+        source_host: installer::release::HOST,
+        install_dir: display_path(&locate::native_bin_dir(&home)),
+        auto_updates: true,
+        already_installed,
+    })
+}
+
+/// Starts the install; events (exactly one terminal event last) flow through
+/// `on_event`. Rejects with `busy` while another install runs.
+#[tauri::command]
+pub async fn claude_install_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    channel: InstallChannel,
+    on_event: Channel<InstallEvent>,
+) -> NativeResult<String> {
+    let home = home_or_err()?;
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| NativeError::internal("the app cache directory is unavailable"))?
+        .join("installer");
+    let registry = state.0.installs.clone();
+    let (install_id, cancel) = registry.begin()?;
+    let dirs = InstallDirs { cache_dir, home };
+    let id = install_id.clone();
+    tauri::async_runtime::spawn(async move {
+        let events = on_event.clone();
+        // Inner task: a panic becomes an `error` event instead of a stuck slot.
+        let work = tauri::async_runtime::spawn(async move {
+            let emit = move |ev: InstallEvent| {
+                let _ = events.send(ev); // the webview may be gone; keep going
+            };
+            installer::install(channel, &dirs, &cancel, &emit).await
+        });
+        let result = work
+            .await
+            .unwrap_or_else(|_| Err(NativeError::internal("the installer task failed")));
+        registry.finish(&id);
+        let _ = on_event.send(InstallEvent::terminal(result));
+    });
+    Ok(install_id)
+}
+
+#[tauri::command]
+pub fn claude_install_cancel(state: State<'_, AppState>, install_id: String) -> NativeResult<()> {
+    if !crate::util::is_uuid(&install_id) {
+        return Err(NativeError::invalid("invalid install id"));
+    }
+    // Unknown/finished installs are a no-op.
+    state.0.installs.cancel(&install_id);
+    Ok(())
 }
 
 // ---------------------------------------------------------------- projects and history

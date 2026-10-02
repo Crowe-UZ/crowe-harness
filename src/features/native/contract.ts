@@ -24,7 +24,7 @@ export type NativeErrorCode =
 export interface ClaudeInstall {
   path: string;
   version: string | null;
-  source: "path" | "desktop" | "local";
+  source: "path" | "local" | "package" | "desktop";
 }
 
 export interface ClaudeStatus {
@@ -36,6 +36,42 @@ export interface ClaudeStatus {
   email: string | null;
   orgName: string | null;
 }
+
+export type InstallChannel = "stable" | "latest";
+
+export interface InstallPlan {
+  version: string;
+  channel: InstallChannel;
+  platform: string;
+  sizeBytes: number;
+  sourceHost: "downloads.claude.ai";
+  installDir: string;
+  autoUpdates: true;
+  alreadyInstalled: ClaudeInstall | null;
+}
+
+export type InstallPhase =
+  "resolving" | "verifying_manifest" | "downloading" | "verifying_binary" | "installing" | "checking";
+
+export type InstallErrorCode =
+  | "unsupported_platform"
+  | "network"
+  | "unexpected_response"
+  | "signature_invalid"
+  | "checksum_mismatch"
+  | "publisher_untrusted"
+  | "install_failed"
+  | "disk_full"
+  | "busy";
+
+/** Exactly one of `done` | `error` | `cancelled` is the last event of an install. */
+export type InstallEvent =
+  | { type: "phase"; phase: InstallPhase }
+  | { type: "progress"; receivedBytes: number; totalBytes: number }
+  | { type: "done"; install: ClaudeInstall }
+  // `code` is an InstallErrorCode; typed as string so unknown future codes still type-check.
+  | { type: "error"; code: string; message: string }
+  | { type: "cancelled" };
 
 export interface ProjectInfo {
   id: string;
@@ -155,6 +191,9 @@ export const NATIVE_COMMANDS = [
   "claude_status",
   "claude_auth_login",
   "claude_auth_logout",
+  "claude_install_plan",
+  "claude_install_start",
+  "claude_install_cancel",
   "projects_list",
   "projects_open_folder",
   "sessions_list",

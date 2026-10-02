@@ -2,7 +2,7 @@ import { act, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { fakeNative } from "@/test/fakes";
+import { fakeNative, fixtures } from "@/test/fakes";
 import { PREFERS_DARK, setMatches } from "@/test/matchMedia";
 import { renderApp } from "@/test/renderApp";
 
@@ -49,7 +49,22 @@ describe("Settings → Account", () => {
     await renderApp("/settings?tab=advanced");
     expect(await screen.findByText("2.3.0")).toBeInTheDocument();
     expect(screen.getByText("C:\\Users\\dev\\.local\\bin\\claude.exe")).toBeInTheDocument();
+    expect(screen.getByText("Native install")).toBeInTheDocument();
     expect(screen.queryByText(/demo/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["path", "PATH"],
+    ["package", "Package manager"],
+    ["desktop", "Claude desktop app"],
+  ] as const)("labels a Claude Code found via %s", async (source, label) => {
+    fakeNative().status = fixtures.subscriptionStatus({
+      install: { path: "/opt/homebrew/bin/claude", version: "2.1.0", source },
+    });
+    await renderApp("/settings?tab=advanced");
+
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.getByText("/opt/homebrew/bin/claude")).toBeInTheDocument();
   });
 });
 

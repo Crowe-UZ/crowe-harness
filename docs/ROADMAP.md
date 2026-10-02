@@ -14,7 +14,7 @@ cargo test          # в src-tauri, с M2
 |---|---|
 | M0 — Окружение и документы | ✅ |
 | M1 — Foundation / UI shell | ✅ |
-| M2 — Claude Code и вход по подписке | ✅ UI (обязательный sign-in gate) · Rust — по контракту [NATIVE_API.md](NATIVE_API.md) |
+| M2 — Claude Code и вход по подписке | ✅ UI (обязательный sign-in gate, установка Claude Code из приложения) · Rust — по контракту [NATIVE_API.md](NATIVE_API.md) |
 | M3 — Чат с реальным runtime | ✅ headless (`claude -p`, `--resume`); вместо интерактивных permission prompts — уведомления `permission_denied` |
 | M4 — Persistence | 🟡 частично: проекты и чаты читаются из истории Claude Code; SQLite, поиск, rename/archive — ☐ |
 | M5 — Files | 🟡 read-only: ленивое дерево и просмотр; редактор, Ctrl+P, watcher — ☐ |
@@ -56,7 +56,13 @@ cargo test          # в src-tauri, с M2
 ## M2 — Claude Code и вход по подписке
 - Rust `claude/`: detect (`which` + override-путь), `auth_status`, `auth_login` (видимый терминал с `claude auth login`), `auth_logout`.
 - `TauriAuthService`, онбординг, Settings → Account, статус в status bar.
-- Требует действий пользователя: установить Claude Code и пройти OAuth в браузере.
+- **Установка Claude Code из приложения** (экран «Claude Code not found» → «Install Claude Code»), контракт — раздел «Installing Claude Code» в [NATIVE_API.md](NATIVE_API.md):
+  - UI ✅: `ClaudeInstallerService` (`claude_install_plan|start|cancel`, события через `Channel<InstallEvent>`), `installStore` (idle → confirming → running → done | error | cancelled, одна установка за раз, отмена, повтор; после done — повторная проверка статуса и переход к sign-in).
+  - Согласие: версия, размер, источник `downloads.claude.ai`, папка установки, канал Stable (рекомендуется) / Latest, «Updates automatically», проверка подписи и checksum, без прав администратора; уже установленный Claude Code — «Check again» вместо установки.
+  - Прогресс: шаги по `InstallPhase` (aria-live только при смене шага), progressbar, байты, скорость и оставшееся время (сглаженные на клиенте), Cancel.
+  - Ошибки по `InstallErrorCode` с понятными текстами, «Try again», «Other ways to install» (официальные команды для ОС с копированием). Settings → Advanced: путь, версия и источник (PATH / Native install / Package manager / Claude desktop app).
+  - Rust (загрузка, проверка OpenPGP-подписи манифеста, SHA-256, подписи издателя, `claude install`) — реализуется по тому же контракту.
+- Требует действий пользователя: пройти OAuth в браузере (и подтвердить установку Claude Code, если его нет).
 - **Приёмка:** реальный статус «Signed in as … (план)»; sign-in/out работают; код не читает credentials (grep).
 
 ## M3 — Чат с реальным runtime

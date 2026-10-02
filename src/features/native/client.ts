@@ -12,6 +12,9 @@ import type {
   ClaudeStatus,
   DirEntry,
   FileContent,
+  InstallChannel,
+  InstallEvent,
+  InstallPlan,
   McpServerInfo,
   NativeCommand,
   NativeError,
@@ -75,6 +78,15 @@ export interface NativeClient {
   claudeStatus(): Promise<ClaudeStatus>;
   claudeAuthLogin(): Promise<void>;
   claudeAuthLogout(): Promise<void>;
+  /** Resolves the version to install and verifies the signed release manifest (no binary download). */
+  claudeInstallPlan(channel: InstallChannel): Promise<InstallPlan>;
+  /**
+   * Starts the native installer; `onEvent` receives every `InstallEvent` (the last one is always
+   * `done`, `error` or `cancelled`). Resolves with the install id.
+   */
+  claudeInstallStart(channel: InstallChannel, onEvent: (event: InstallEvent) => void): Promise<string>;
+  /** No-op for unknown or finished ids; a running install ends with a `cancelled` event. */
+  claudeInstallCancel(installId: string): Promise<void>;
   projectsList(): Promise<ProjectInfo[]>;
   projectsOpenFolder(): Promise<ProjectInfo | null>;
   sessionsList(projectId: string): Promise<SessionInfo[]>;
@@ -106,6 +118,12 @@ export const tauriClient: NativeClient = {
   claudeStatus: () => call<ClaudeStatus>("claude_status"),
   claudeAuthLogin: () => call<null>("claude_auth_login").then(() => undefined),
   claudeAuthLogout: () => call<null>("claude_auth_logout").then(() => undefined),
+  claudeInstallPlan: (channel) => call<InstallPlan>("claude_install_plan", { channel }),
+  claudeInstallStart: (channel, onEvent) => {
+    const events = new Channel<InstallEvent>(onEvent);
+    return call<string>("claude_install_start", { channel, onEvent: events });
+  },
+  claudeInstallCancel: (installId) => call<null>("claude_install_cancel", { installId }).then(() => undefined),
   projectsList: () => call<ProjectInfo[]>("projects_list"),
   projectsOpenFolder: () => call<ProjectInfo | null>("projects_open_folder"),
   sessionsList: (projectId) => call<SessionInfo[]>("sessions_list", { projectId }),

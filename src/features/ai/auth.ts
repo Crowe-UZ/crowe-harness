@@ -4,11 +4,19 @@
  * Claude credentials or tokens. See docs/SPEC.md §B1.
  */
 
-export interface ClaudeCodeInstall {
-  path: string;
-  version: string | null;
-  source: "path" | "desktop" | "local";
-}
+import type { ClaudeInstall } from "@/features/native/contract";
+
+/** Where the Claude Code that Crowe Harness runs was found (docs/NATIVE_API.md, "Locating `claude`"). */
+export type ClaudeCodeInstall = ClaudeInstall;
+export type ClaudeCodeInstallSource = ClaudeInstall["source"];
+
+/** Short labels for `ClaudeCodeInstall.source`. */
+export const INSTALL_SOURCE_LABELS = {
+  path: "PATH",
+  local: "Native install",
+  package: "Package manager",
+  desktop: "Claude desktop app",
+} as const satisfies Record<ClaudeCodeInstallSource, string>;
 
 export type AuthStatus =
   /** Running in a plain browser: there is no desktop runtime to talk to. */

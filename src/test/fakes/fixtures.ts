@@ -7,6 +7,8 @@ import type {
   ClaudeStatus,
   DirEntry,
   FileContent,
+  InstallChannel,
+  InstallPlan,
   McpServerInfo,
   ProjectInfo,
   SessionInfo,
@@ -45,6 +47,21 @@ export function signedOutStatus(): ClaudeStatus {
 
 export function notInstalledStatus(): ClaudeStatus {
   return { ...signedOutStatus(), install: null };
+}
+
+/** Install plans per channel: what `claude_install_plan` returns on a Windows x64 machine without Claude Code. */
+export function installPlan(channel: InstallChannel = "stable", overrides: Partial<InstallPlan> = {}): InstallPlan {
+  return {
+    version: channel === "stable" ? "2.1.285" : "2.2.0",
+    channel,
+    platform: "win32-x64",
+    sizeBytes: channel === "stable" ? 104_857_600 : 110_100_480,
+    sourceHost: "downloads.claude.ai",
+    installDir: "C:\\Users\\dev\\.local\\bin",
+    autoUpdates: true,
+    alreadyInstalled: null,
+    ...overrides,
+  };
 }
 
 export function apiKeyStatus(): ClaudeStatus {

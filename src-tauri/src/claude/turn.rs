@@ -155,7 +155,7 @@ impl TurnRegistry {
 }
 
 #[cfg(windows)]
-fn job_for(child: &Child) -> Option<win32job::Job> {
+pub(crate) fn job_for(child: &Child) -> Option<win32job::Job> {
     let handle = child.raw_handle()? as isize;
     let mut info = win32job::ExtendedLimitInfo::new();
     info.limit_kill_on_job_close();

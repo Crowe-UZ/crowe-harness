@@ -8,6 +8,7 @@ use crate::claude::locate::home_dir;
 use crate::claude::turn::TurnRegistry;
 use crate::error::NativeResult;
 use crate::guard::ConfigGuard;
+use crate::installer::InstallRegistry;
 use crate::projects::{self, CwdCache, OpenedRegistry, ResolvedProject};
 
 /// Claude Code directories reported by `claude auth status`.
@@ -23,6 +24,7 @@ pub struct Inner {
     pub cwd_cache: CwdCache,
     pub registry: OpenedRegistry,
     pub turns: Arc<TurnRegistry>,
+    pub installs: Arc<InstallRegistry>,
 }
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ impl AppState {
             cwd_cache: CwdCache::default(),
             registry: OpenedRegistry::new(registry_file),
             turns: Arc::new(TurnRegistry::default()),
+            installs: Arc::new(InstallRegistry::default()),
         }))
     }
 }

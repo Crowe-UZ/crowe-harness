@@ -1,6 +1,6 @@
 import type { Channel } from "@tauri-apps/api/core";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { NATIVE_COMMANDS, type TurnEvent } from "./contract";
+import { NATIVE_COMMANDS, type InstallEvent, type TurnEvent } from "./contract";
 
 type Core = typeof import("@tauri-apps/api/core");
 type Client = typeof import("./client");
@@ -52,6 +52,8 @@ describe("tauriClient", () => {
     ["claudeStatus", [], "claude_status", undefined],
     ["claudeAuthLogin", [], "claude_auth_login", undefined],
     ["claudeAuthLogout", [], "claude_auth_logout", undefined],
+    ["claudeInstallPlan", ["latest"], "claude_install_plan", { channel: "latest" }],
+    ["claudeInstallCancel", ["install-1"], "claude_install_cancel", { installId: "install-1" }],
     ["projectsList", [], "projects_list", undefined],
     ["projectsOpenFolder", [], "projects_open_folder", undefined],
     ["sessionsList", ["p1"], "sessions_list", { projectId: "p1" }],
@@ -90,6 +92,20 @@ describe("tauriClient", () => {
     const channel = (payload as { onEvent: Channel<TurnEvent> }).onEvent;
     channel.onmessage({ type: "exit", code: 0 });
     expect(events).toEqual([{ type: "exit", code: 0 }]);
+  });
+
+  it("starts an install with a Channel that forwards InstallEvents", async () => {
+    invokeMock().mockResolvedValue("install-3");
+    const events: InstallEvent[] = [];
+    const installId = await client.tauriClient.claudeInstallStart("stable", (event) => events.push(event));
+
+    expect(installId).toBe("install-3");
+    const [command, payload] = invokeMock().mock.calls[0] ?? [];
+    expect(command).toBe("claude_install_start");
+    expect(payload).toMatchObject({ channel: "stable" });
+    const channel = (payload as { onEvent: Channel<InstallEvent> }).onEvent;
+    channel.onmessage({ type: "phase", phase: "downloading" });
+    expect(events).toEqual([{ type: "phase", phase: "downloading" }]);
   });
 
   it("normalizes rejected NativeErrors", async () => {

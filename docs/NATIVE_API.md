@@ -29,7 +29,7 @@ Security rules (see SPEC §D, "Security rules for native commands"):
 
 ```ts
 {
-  install: { path: string; version: string | null; source: "path" | "desktop" | "local" } | null;
+  install: { path: string; version: string | null; source: "path" | "local" | "package" | "desktop" } | null;
   loggedIn: boolean;
   authMethod: string | null;        // raw value from `claude auth status`
   subscription: boolean;            // true only for Claude subscription sign-in (claude.ai), false for console/API key
@@ -39,8 +39,91 @@ Security rules (see SPEC §D, "Security rules for native commands"):
 }
 ```
 
-Locating `claude` (first hit wins): `PATH` (`claude`/`claude.exe`) → `%APPDATA%\Claude\claude-code\<highest semver>\claude.exe`
-(binary bundled with the Claude desktop app) → `%USERPROFILE%\.local\bin\claude.exe`.
+Locating `claude` (first hit wins, executables only — never `.cmd`/`.bat` shims):
+1. `PATH` (`claude` / `claude.exe`)
+2. native install launcher: `~/.local/bin/claude` (macOS/Linux), `%USERPROFILE%\.local\bin\claude.exe` (Windows)
+3. package-manager locations GUI apps may not see on PATH: `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`,
+   `/home/linuxbrew/.linuxbrew/bin/claude`, `/usr/bin/claude`; Windows WinGet links `%LOCALAPPDATA%\Microsoft\WinGet\Links\claude.exe`
+4. binary bundled with the Claude desktop app: `%APPDATA%\Claude\claude-code\<highest semver>\claude.exe`
+
+`install.source`: `"path" | "local" | "package" | "desktop"`.
+
+## Installing Claude Code (in-app, native installer replicated in Rust)
+
+| Command | Args | Returns |
+|---|---|---|
+| `claude_install_plan` | `{ channel: "stable" \| "latest" }` | `InstallPlan` — resolves version, fetches + **verifies** the signed manifest; no binary download |
+| `claude_install_start` | `{ channel: "stable" \| "latest", onEvent: Channel<InstallEvent> }` | `installId: string` |
+| `claude_install_cancel` | `{ installId }` | `null` (no-op for unknown/finished ids) |
+
+```ts
+InstallPlan {
+  version: string;            // e.g. "2.1.285"
+  channel: "stable" | "latest";
+  platform: string;           // "win32-x64" | "win32-arm64" | "darwin-arm64" | "darwin-x64" | "linux-x64" | "linux-arm64" | "linux-x64-musl" | "linux-arm64-musl"
+  sizeBytes: number;
+  sourceHost: "downloads.claude.ai";
+  installDir: string;         // where the launcher ends up, e.g. "C:\Users\me\.local\bin" (display only)
+  autoUpdates: true;          // native installs update themselves
+  alreadyInstalled: ClaudeInstall | null;
+}
+InstallEvent =
+  | { type: "phase"; phase: "resolving" | "verifying_manifest" | "downloading" | "verifying_binary" | "installing" | "checking" }
+  | { type: "progress"; receivedBytes: number; totalBytes: number }   // throttled (≤ 10/s)
+  | { type: "done"; install: ClaudeInstall }
+  | { type: "error"; code: string; message: string }                  // codes below
+  | { type: "cancelled" }
+// exactly one of done | error | cancelled is the last event
+```
+
+Algorithm (mirrors the official `install.sh` / `install.ps1`, without piping a remote script into a shell):
+
+1. Platform detection as the official scripts: Windows `PROCESSOR_ARCHITECTURE`/`IsWow64Process2` → `win32-arm64|win32-x64`;
+   macOS arch with Rosetta check (`sysctl.proc_translated` = 1 → `darwin-arm64`); Linux arch + musl detection
+   (`/lib/libc.musl-{x86_64,aarch64}.so.1` exists or `ldd --version` mentions musl). Unsupported → `unsupported_platform`.
+2. `GET https://downloads.claude.ai/claude-code-releases/{stable|latest}` → must match `^\d+\.\d+\.\d+$` (else `unexpected_response`,
+   e.g. region block / captive portal HTML).
+3. `GET …/{version}/manifest.json` and `…/{version}/manifest.json.sig`; verify the detached OpenPGP signature with the
+   **embedded** Anthropic release key, pinned to fingerprint `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`
+   (else `signature_invalid`); `manifest.version` must equal the requested version; take `platforms[platform]
+   {binary, checksum (sha256 hex), size}`.
+4. Stream `…/{version}/{platform}/{binary}` into a unique temp file in the per-user app cache dir, hashing SHA-256 on the
+   fly, enforcing the exact `size`; resume with HTTP `Range` on transient failures (≤ 3 attempts); constant-time hash
+   compare (else `checksum_mismatch`, file deleted).
+5. Defense in depth: Windows `WinVerifyTrust` + signer subject must be "Anthropic, PBC"; macOS `codesign --verify --strict`
+   + Team ID / "Anthropic PBC" authority check; Linux: manifest signature only (binaries are unsigned upstream).
+   Failure → `publisher_untrusted`.
+6. Run `<temp binary> install <channel>` (no elevation, stdin null, no console window, timeout 10 min, API-key env vars
+   removed); then locate `~/.local/bin/claude[.exe]` and run `--version` (else `install_failed` with a short output tail).
+7. Delete the temp file (retry on Windows file locks). Never elevate; never modify PATH (the app spawns by absolute path).
+
+Network: HTTPS only (rustls + OS certificate store), host allowlist `downloads.claude.ai` (redirects to other hosts
+are refused), standard proxy env vars honored (`HTTPS_PROXY`, `NO_PROXY`), connect timeout 15 s, read timeout 60 s.
+Error codes: `unsupported_platform`, `network`, `unexpected_response`, `signature_invalid`, `checksum_mismatch`,
+`publisher_untrusted`, `install_failed`, `disk_full`, `busy` (an install is already running), `cancelled` is an event, not an error.
+
+Notes (installer implementation):
+- `claude_install_plan` rejects with the installer codes of steps 1-3 (`unsupported_platform`, `network`,
+  `unexpected_response`, `signature_invalid`). `claude_install_start` rejects only with `busy` / `internal`; every
+  later failure is an `error` event. It returns a UUID `installId`; `claude_install_cancel` rejects a non-UUID id with
+  `invalid_argument`. One install at a time; a running install is cancelled on app exit.
+- The published `manifest.json.sig` is ASCII-armored; binary detached signatures are accepted too. Signature type must
+  be binary/text, the issuer fingerprint (when present) must be the pinned one, and the embedded key's own
+  self-signature is checked. `manifest.platforms[p].binary` must be exactly `claude` / `claude.exe`, `checksum`
+  64 hex chars, `0 < size <= 2 GiB` (else `unexpected_response`); a missing platform entry is `unsupported_platform`.
+- Version text: ASCII digits only, each part <= 9 digits, total <= 32 chars. HTTP 403/451 or an HTML response add a
+  "region / proxy" hint to `unexpected_response`; 408/429/5xx and transport errors are `network`.
+- Download: temp file `<app cache>/installer/claude-install-<uuid>[.exe]` (dir 0700, file 0600 -> 0700 after
+  verification on Unix); leftovers of interrupted installs are swept at the next start. Up to 3 resumes (`Range`,
+  backoff 1/2/4 s); a server ignoring `Range` restarts from 0; a body longer than the signed `size` is
+  `unexpected_response`. Free space (Windows) must be `size + 64 MB` on the cache and home volumes, else `disk_full`.
+- Windows publisher check: `WinVerifyTrust` (no UI, no online revocation, cache-only URL retrieval) + common name of the
+  verified primary signer == `Anthropic, PBC`. macOS: `codesign --verify --strict --deep`, leaf
+  `Authority=Developer ID Application: Anthropic…(TEAMID)` with matching `TeamIdentifier`; `spctl` is informational.
+- `install` output (stdout+stderr, last 64 KB) is sanitized for error messages: ANSI/control characters removed, the
+  home directory shown as `~`, last 300 characters. Linux exit 137 is reported as out-of-memory.
+- The app itself never modifies PATH or shell profiles; what `claude install` does to the user's environment is the
+  official installer's behaviour.
 
 Notes (implementation):
 - `claude_status` returns `install: null` (and `loggedIn: false`) when `claude` is not found; it rejects with

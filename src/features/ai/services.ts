@@ -7,12 +7,15 @@ import type { FsService } from "@/features/workspace/fs";
 import { NativeFsService } from "@/features/workspace/NativeFsService";
 import type { AuthService } from "./auth";
 import { ClaudeCodeAuthService } from "./ClaudeCodeAuthService";
+import { ClaudeCodeInstallerService } from "./ClaudeCodeInstallerService";
 import { ClaudeCodeProvider } from "./ClaudeCodeProvider";
+import type { ClaudeInstallerService } from "./installer";
 import type { AIProvider } from "./types";
 
 export interface Services {
   ai: AIProvider;
   auth: AuthService;
+  installer: ClaudeInstallerService;
   history: HistoryService;
   fs: FsService;
   config: ConfigService;
@@ -27,6 +30,7 @@ export interface Services {
 export const services: Services = {
   ai: new ClaudeCodeProvider(tauriClient),
   auth: new ClaudeCodeAuthService(tauriClient, isDesktopRuntime),
+  installer: new ClaudeCodeInstallerService(tauriClient),
   history: new NativeHistoryService(tauriClient),
   fs: new NativeFsService(tauriClient),
   config: new NativeConfigService(tauriClient),

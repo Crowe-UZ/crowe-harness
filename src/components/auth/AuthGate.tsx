@@ -1,16 +1,12 @@
-import { CircleAlert, KeyRound, LoaderCircle, MonitorSmartphone, PackageSearch, ShieldX } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
-import { CommandSnippet } from "@/components/common/CommandSnippet";
+import { CircleAlert, KeyRound, LoaderCircle, MonitorSmartphone, ShieldX } from "lucide-react";
+import { useEffect, type ReactNode } from "react";
 import { usePageTitle } from "@/components/common/use-page-title";
-import { Logo } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { hasAccess, planLabel, type AuthStatus } from "@/features/ai/auth";
-import { cn } from "@/lib/utils";
 import { authTiming, useAuthStore } from "@/stores/authStore";
-
-export const INSTALL_COMMAND = "winget install Anthropic.ClaudeCode";
-export const DOCS_URL = "https://code.claude.com/docs";
+import { CheckAgainButton, GateLayout, InlineError, Lead } from "./GateLayout";
+import { InstallScreen } from "./InstallScreen";
 
 /**
  * Mandatory sign-in gate: the app shell (sidebar, pages) only renders with a
@@ -56,100 +52,6 @@ function GateScreen({ status }: { status: Exclude<AuthStatus, { state: "signed_i
   }
 }
 
-// --- Layout -------------------------------------------------------------------------
-
-function GateLayout({
-  title,
-  icon: Icon,
-  tone = "default",
-  children,
-}: {
-  title: string;
-  icon: typeof KeyRound;
-  tone?: "default" | "danger";
-  children: ReactNode;
-}) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  usePageTitle(title);
-
-  // Each new gate screen moves focus to its heading so the change is announced.
-  useEffect(() => {
-    headingRef.current?.focus();
-  }, [title]);
-
-  return (
-    <div className="flex min-h-svh flex-col items-center justify-center bg-background px-6 py-10 text-foreground">
-      <main className="w-full max-w-md space-y-6" aria-labelledby="gate-title">
-        <div className="flex items-center gap-2">
-          <Logo className="size-6" />
-          <span className="text-sm font-semibold tracking-tight">Crowe Harness</span>
-        </div>
-        <section className="space-y-5 rounded-xl border bg-card p-6 text-card-foreground shadow-xs">
-          <div className="space-y-3">
-            <div
-              className={cn(
-                "flex size-10 items-center justify-center rounded-lg bg-accent text-accent-foreground",
-                tone === "danger" && "bg-destructive/10 text-destructive",
-              )}
-            >
-              <Icon className="size-5" aria-hidden="true" />
-            </div>
-            <h1
-              id="gate-title"
-              ref={headingRef}
-              tabIndex={-1}
-              className="text-lg font-semibold tracking-tight outline-none"
-            >
-              {title}
-            </h1>
-          </div>
-          {children}
-        </section>
-        <p className="text-center text-xs text-muted-foreground">
-          Powered by Claude Code. Crowe Harness never sees or stores your Claude credentials.
-        </p>
-      </main>
-    </div>
-  );
-}
-
-function Lead({ children }: { children: ReactNode }) {
-  return <p className="text-sm text-muted-foreground">{children}</p>;
-}
-
-function InlineError({ message }: { message: string | undefined }) {
-  if (!message) return null;
-  return (
-    <p
-      role="alert"
-      className="flex gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-    >
-      <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      <span>{message}</span>
-    </p>
-  );
-}
-
-/** "Check again" that keeps focus while busy (aria-disabled instead of disabled). */
-function CheckAgainButton({ variant = "outline" }: { variant?: "outline" | "default" }) {
-  const checking = useAuthStore((s) => s.checking);
-  const refresh = useAuthStore((s) => s.refresh);
-  return (
-    <Button
-      variant={variant}
-      size="sm"
-      aria-disabled={checking || undefined}
-      className="aria-disabled:opacity-50"
-      onClick={() => {
-        if (!checking) void refresh();
-      }}
-    >
-      {checking ? <LoaderCircle data-icon="inline-start" className="animate-spin" /> : null}
-      {checking ? "Checking…" : "Check again"}
-    </Button>
-  );
-}
-
 // --- Screens --------------------------------------------------------------------------
 
 function CheckingScreen() {
@@ -186,29 +88,6 @@ function DesktopRequiredScreen() {
         app&apos;s interface opened in a regular browser, so it cannot sign in or read your projects.
       </Lead>
       <Lead>Start Crowe Harness from the Start menu, or run it during development with “pnpm tauri dev”.</Lead>
-    </GateLayout>
-  );
-}
-
-function InstallScreen() {
-  const error = useAuthStore((s) => s.error);
-  return (
-    <GateLayout title="Install Claude Code" icon={PackageSearch}>
-      <Lead>
-        Crowe Harness uses Claude Code as its AI runtime, but it was not found on this computer. Install it, then check
-        again.
-      </Lead>
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Install with winget</p>
-        <CommandSnippet value={INSTALL_COMMAND} label="install command" />
-      </div>
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Other installation options</p>
-        <CommandSnippet value={DOCS_URL} label="documentation link" />
-      </div>
-      <Lead>The Claude desktop app also includes Claude Code — if it is installed, Crowe Harness can use it.</Lead>
-      <InlineError message={error} />
-      <CheckAgainButton variant="default" />
     </GateLayout>
   );
 }

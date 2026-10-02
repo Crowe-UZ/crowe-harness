@@ -7,6 +7,7 @@ import type { StoreApi } from "zustand";
 import { services, type Services } from "@/features/ai/services";
 import { authTiming, useAuthStore } from "@/stores/authStore";
 import { useChatStore } from "@/stores/chatStore";
+import { installTiming, useInstallStore } from "@/stores/installStore";
 import { useProjectStore } from "@/stores/projectStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -36,12 +37,15 @@ if (!("scrollIntoView" in Element.prototype)) {
 
 const realServices: Services = { ...services };
 const realTiming = { ...authTiming };
+const realInstallTiming = { ...installTiming };
 
 beforeEach(() => {
   // Real service implementations over an in-memory native client (signed in with a subscription by default).
   installFakeServices();
   // Sign-in polling yields to the event loop but never waits.
   authTiming.pollIntervalMs = 0;
+  // The "installed" confirmation moves on to the sign-in check immediately.
+  installTiming.successDelayMs = 0;
 });
 
 // --- Isolation: every test starts from a fresh app state -----------------------
@@ -58,6 +62,7 @@ const stores: ResettableStore[] = [
   resettable(useChatStore),
   resettable(useSettingsStore),
   resettable(useAuthStore),
+  resettable(useInstallStore),
   resettable(useUiStore),
   resettable(useWorkspaceStore),
 ];
@@ -68,6 +73,7 @@ afterEach(() => {
   // Abandon in-flight turns and sign-in polling held outside the zustand state.
   useChatStore.getState().reset();
   useAuthStore.getState().reset();
+  useInstallStore.getState().reset();
   for (const store of stores) store.resetToInitial();
   // After the store resets: persisted stores write their initial state back to storage.
   localStorage.clear();
@@ -77,4 +83,5 @@ afterEach(() => {
   resetMatchMedia();
   Object.assign(services, realServices);
   Object.assign(authTiming, realTiming);
+  Object.assign(installTiming, realInstallTiming);
 });
